@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Download, Package, BookOpen, BarChart3, Calendar, TrendingUp, MapPin, Warehouse } from "lucide-react";
+import { Download, Package, BookOpen, BarChart3, Calendar, TrendingUp, MapPin, Warehouse, ArrowRightLeft } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { adminApi } from "@/utils/api";
-import type { PredictionData, ReportData } from "@/types";
+import type { PredictionData, ReportData, WarehouseInventoryItem, StockTransfer } from "@/types";
 
 const PIE_COLORS = ["#FF6B6B", "#4ECDC4", "#FFB347", "#87CEEB", "#DDA0DD"];
 
@@ -10,17 +10,41 @@ export default function AdminPrediction() {
   const [prediction, setPrediction] = useState<PredictionData | null>(null);
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [warehouseInventory, setWarehouseInventory] = useState<WarehouseInventoryItem[]>([]);
+  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
+  const [transferForm, setTransferForm] = useState({ product_id: 0, from_warehouse_id: 0, to_warehouse_id: 0, quantity: 1 });
+  const [warehouses, setWarehouses] = useState<any[]>([]);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pred, rep] = await Promise.all([adminApi.prediction(), adminApi.report()]);
+      const [pred, rep, inv, trans] = await Promise.all([
+        adminApi.prediction(),
+        adminApi.report(),
+        adminApi.warehouseInventory(),
+        adminApi.stockTransfers(),
+      ]);
       setPrediction(pred);
       setReport(rep);
+      setWarehouseInventory(inv);
+      setStockTransfers(trans);
+      const uniqueWarehouses = Array.from(
+        new Map(inv.map((item) => [item.warehouse_id, { id: item.warehouse_id, name: item.warehouse_name, city: item.warehouse_city }])).values()
+      );
+      setWarehouses(uniqueWarehouses);
     } catch { /* */ }
     setLoading(false);
+  };
+
+  const handleTransfer = async () => {
+    if (!transferForm.product_id || !transferForm.from_warehouse_id || !transferForm.to_warehouse_id || transferForm.quantity <= 0) return;
+    try {
+      await adminApi.stockTransfer(transferForm);
+      setTransferForm({ product_id: 0, from_warehouse_id: 0, to_warehouse_id: 0, quantity: 1 });
+      await loadData();
+    } catch { /* */ }
   };
 
   const handleExport = () => {
@@ -49,6 +73,12 @@ export default function AdminPrediction() {
         csvRows.push([w.name, w.city, w.totalStock, w.productCount, w.orderCount].join(","));
       }
     }
+    if (report.afterSalesReport && report.afterSalesReport.length > 0) {
+      csvRows.push("", ["售后分析"].join(","), ["城市", "仓库", "类目", "售后总数", "退款金额", "退货数量"].join(","));
+      for (const a of report.afterSalesReport) {
+        csvRows.push([a.city, a.warehouse, a.category, a.totalAS, a.totalRefund, a.totalReturnQty].join(","));
+      }
+    }
     const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -57,6 +87,8 @@ export default function AdminPrediction() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  const uniqueProductNames = Array.from(new Set(warehouseInventory.map((i) => i.product_name)));
 
   if (loading) {
     return <div className="py-20 text-center text-charcoal-light text-sm">加载中...</div>;
@@ -114,6 +146,158 @@ export default function AdminPrediction() {
               ))}
             </div>
           </div>
+
+          {warehouseInventory.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <Package className="h-5 w-5 text-amber-500" />
+                <h3 className="text-sm font-semibold text-charcoal">仓库库存管理</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">商品名</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">类目</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">仓库</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">当前库存</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">安全库存</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">缺货次数</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">补货建议</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {warehouseInventory.map((item) => (
+                      <tr key={item.id} className="border-b border-gray-50">
+                        <td className="py-2.5 text-charcoal">{item.product_name}</td>
+                        <td className="py-2.5 text-charcoal-light">{item.category}</td>
+                        <td className="py-2.5 text-charcoal-light">{item.warehouse_name}({item.warehouse_city})</td>
+                        <td className="py-2.5 text-right text-charcoal">{item.stock}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{item.safetyStock}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{item.stockoutCount}</td>
+                        <td className="py-2.5 text-right">
+                          {item.needReplenish
+                            ? <span className="text-red-500 text-xs font-medium">需补货</span>
+                            : <span className="text-green-500 text-xs font-medium">充足</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {warehouses.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <ArrowRightLeft className="h-5 w-5 text-blue-500" />
+                <h3 className="text-sm font-semibold text-charcoal">库存调拨</h3>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-charcoal-light mb-1">商品</label>
+                  <select
+                    className="w-full rounded-xl border border-gray-200 bg-cream px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-1 focus:ring-coral"
+                    value={transferForm.product_id}
+                    onChange={(e) => {
+                      const pid = Number(e.target.value);
+                      setTransferForm({ product_id: pid, from_warehouse_id: 0, to_warehouse_id: 0, quantity: 1 });
+                    }}
+                  >
+                    <option value={0}>选择商品</option>
+                    {uniqueProductNames.map((name) => {
+                      const item = warehouseInventory.find((i) => i.product_name === name)!;
+                      return <option key={item.product_id} value={item.product_id}>{name}</option>;
+                    })}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-charcoal-light mb-1">调出仓库</label>
+                    <select
+                      className="w-full rounded-xl border border-gray-200 bg-cream px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-1 focus:ring-coral"
+                      value={transferForm.from_warehouse_id}
+                      onChange={(e) => setTransferForm((f) => ({ ...f, from_warehouse_id: Number(e.target.value), to_warehouse_id: 0 }))}
+                    >
+                      <option value={0}>选择仓库</option>
+                      {warehouseInventory
+                        .filter((i) => i.product_id === transferForm.product_id)
+                        .filter((v, idx, arr) => arr.findIndex((a) => a.warehouse_id === v.warehouse_id) === idx)
+                        .map((i) => (
+                          <option key={i.warehouse_id} value={i.warehouse_id}>{i.warehouse_name}({i.warehouse_city}) - 库存{i.stock}</option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-charcoal-light mb-1">调入仓库</label>
+                    <select
+                      className="w-full rounded-xl border border-gray-200 bg-cream px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-1 focus:ring-coral"
+                      value={transferForm.to_warehouse_id}
+                      onChange={(e) => setTransferForm((f) => ({ ...f, to_warehouse_id: Number(e.target.value) }))}
+                    >
+                      <option value={0}>选择仓库</option>
+                      {warehouses
+                        .filter((w) => w.id !== transferForm.from_warehouse_id)
+                        .map((w) => (
+                          <option key={w.id} value={w.id}>{w.name}({w.city})</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-charcoal-light mb-1">调拨数量</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full rounded-xl border border-gray-200 bg-cream px-3 py-2 text-sm text-charcoal focus:outline-none focus:ring-1 focus:ring-coral"
+                    value={transferForm.quantity}
+                    onChange={(e) => setTransferForm((f) => ({ ...f, quantity: Number(e.target.value) }))}
+                  />
+                </div>
+                <button
+                  onClick={handleTransfer}
+                  disabled={!transferForm.product_id || !transferForm.from_warehouse_id || !transferForm.to_warehouse_id || transferForm.quantity <= 0}
+                  className="w-full rounded-xl bg-blue-500 py-2.5 text-sm font-medium text-white hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  提交调拨
+                </button>
+              </div>
+            </div>
+          )}
+
+          {stockTransfers.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <ArrowRightLeft className="h-5 w-5 text-mint" />
+                <h3 className="text-sm font-semibold text-charcoal">调拨记录</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">商品</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">从</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">到</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">数量</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stockTransfers.map((t) => (
+                      <tr key={t.id} className="border-b border-gray-50">
+                        <td className="py-2.5 text-charcoal">{t.product_name || "-"}</td>
+                        <td className="py-2.5 text-charcoal-light">{t.from_warehouse_name || "-"}</td>
+                        <td className="py-2.5 text-charcoal-light">{t.to_warehouse_name || "-"}</td>
+                        <td className="py-2.5 text-right text-charcoal">{t.quantity}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{t.created_at}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {prediction.coursePredictions.length > 0 && (
             <div className="rounded-2xl bg-white p-5 card-shadow">

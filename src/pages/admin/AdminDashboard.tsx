@@ -281,6 +281,94 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {dashboard.afterSales && (
+            <div className="rounded-2xl bg-white p-4 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <RotateCcw className="h-5 w-5 text-coral" />
+                <h3 className="text-sm font-semibold text-charcoal">售后分析</h3>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <div className="rounded-xl bg-coral/5 p-3">
+                  <p className="text-xs text-charcoal-light">售后单数</p>
+                  <p className="text-xl font-bold text-charcoal mt-1">{dashboard.afterSales.totalAS}</p>
+                </div>
+                <div className="rounded-xl bg-coral/5 p-3">
+                  <p className="text-xs text-charcoal-light">退款金额</p>
+                  <p className="text-xl font-bold text-charcoal mt-1">¥{dashboard.afterSales.totalRefund.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl bg-coral/5 p-3">
+                  <p className="text-xs text-charcoal-light">退货入库</p>
+                  <p className="text-xl font-bold text-charcoal mt-1">{dashboard.afterSales.totalReturnQty}件</p>
+                </div>
+                <div className="rounded-xl bg-coral/5 p-3">
+                  <p className="text-xs text-charcoal-light">售后率</p>
+                  <p className="text-xl font-bold text-charcoal mt-1">{dashboard.afterSales.afterSalesRate}%</p>
+                </div>
+              </div>
+              {dashboard.afterSales.list.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="py-2 text-left text-xs font-medium text-charcoal-light">订单号</th>
+                        <th className="py-2 text-left text-xs font-medium text-charcoal-light">用户</th>
+                        <th className="py-2 text-left text-xs font-medium text-charcoal-light">商品</th>
+                        <th className="py-2 text-left text-xs font-medium text-charcoal-light">类型</th>
+                        <th className="py-2 text-right text-xs font-medium text-charcoal-light">数量</th>
+                        <th className="py-2 text-right text-xs font-medium text-charcoal-light">退款金额</th>
+                        <th className="py-2 text-right text-xs font-medium text-charcoal-light">状态</th>
+                        <th className="py-2 text-left text-xs font-medium text-charcoal-light">城市</th>
+                        <th className="py-2 text-right text-xs font-medium text-charcoal-light">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboard.afterSales.list.map((as) => (
+                        <tr key={as.id} className="border-b border-gray-50">
+                          <td className="py-2.5 text-charcoal">#{as.order_id}</td>
+                          <td className="py-2.5 text-charcoal-light">{as.user_name || '-'}</td>
+                          <td className="py-2.5 text-charcoal-light">{as.product_name || '-'}</td>
+                          <td className="py-2.5 text-charcoal-light">
+                            {as.type === 'refund' ? '退款' : as.type === 'return_refund' ? '退货退款' : '换货'}
+                          </td>
+                          <td className="py-2.5 text-right text-charcoal">{as.quantity}</td>
+                          <td className="py-2.5 text-right text-charcoal">¥{as.refund_amount.toLocaleString()}</td>
+                          <td className="py-2.5 text-right">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              as.status === 'approved' ? 'bg-green-100 text-green-600' :
+                              as.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                              'bg-amber-100 text-amber-600'
+                            }`}>
+                              {as.status === 'approved' ? '已通过' : as.status === 'rejected' ? '已驳回' : '待处理'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 text-charcoal-light">{as.city || '-'}</td>
+                          <td className="py-2.5 text-right">
+                            {as.status === 'pending' && (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  onClick={() => handleReviewAfterSale(as.id, 'approve')}
+                                  className="rounded-lg bg-green-50 px-2 py-1 text-xs text-green-600 hover:bg-green-100 transition-colors"
+                                >
+                                  通过
+                                </button>
+                                <button
+                                  onClick={() => handleReviewAfterSale(as.id, 'reject')}
+                                  className="rounded-lg bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100 transition-colors"
+                                >
+                                  驳回
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {dashboard.recentOrders.length > 0 && (
             <div className="rounded-2xl bg-white p-4 card-shadow">
               <h3 className="text-sm font-semibold text-charcoal mb-4">近期订单</h3>

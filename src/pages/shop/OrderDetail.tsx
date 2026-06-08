@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   MapPin,
@@ -9,10 +9,12 @@ import {
   CircleDot,
   AlertTriangle,
   Warehouse,
+  RotateCcw,
 } from "lucide-react";
 import { useShopStore } from "@/store/shopStore";
 import PageHeader from "@/components/PageHeader";
-import type { Order, LogisticsRecord } from "@/types";
+import { afterSaleApi } from "@/utils/api";
+import type { Order, LogisticsRecord, AfterSale } from "@/types";
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   pending: { label: "待付款", color: "bg-amber-100 text-amber-700", icon: <Clock className="h-5 w-5" /> },
@@ -81,10 +83,26 @@ function LogisticsTimeline({ records }: { records: LogisticsRecord[] }) {
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
   const { currentOrder, fetchOrder } = useShopStore();
+  const [showAfterSale, setShowAfterSale] = useState(false);
+  const [asForm, setAsForm] = useState({ type: "refund", reason: "", product_id: 0, quantity: 1 });
 
   useEffect(() => {
     if (id) fetchOrder(Number(id));
   }, [id, fetchOrder]);
+
+  const handleSubmitAfterSale = async () => {
+    if (!id || !asForm.product_id || !asForm.quantity) {
+      alert("请选择商品和数量");
+      return;
+    }
+    try {
+      await afterSaleApi.create(Number(id), asForm);
+      setShowAfterSale(false);
+      fetchOrder(Number(id));
+    } catch (e: any) {
+      alert(e.message || "申请失败");
+    }
+  };
 
   if (!currentOrder) {
     return (
@@ -205,6 +223,109 @@ export default function OrderDetail() {
             )}
           </div>
         </div>
+
+        {(order.status === 'shipped' || order.status === 'delivered') && (
+          <div className="mt-3 rounded-2xl bg-white p-4 card-shadow">
+            <div className="flex items-center gap-2 mb-3">
+              <RotateCcw className="h-4 w-4 text-coral" />
+              <p className="text-sm font-medium text-charcoal">售后申请</p>
+            </div>
+            {order.afterSales && order.afterSales.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {order.afterSales.map((as: AfterSale) => (
+                  <div key={as.id} className="rounded-xl bg-cream p-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-charcoal">{as.product_name || `商品#${as.product_id}`} × {as.quantity}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        as.status === 'approved' ? 'bg-green-100 text-green-600' :
+                        as.status === 'rejected' ? 'bg-red-100 text-red-600' :
+                        'bg-amber-100 text-amber-600'
+                      }`}>
+                        {as.status === 'approved' ? '已通过' : as.status === 'rejected' ? '已驳回' : '待处理'}
+                      </span>
+                    </div>
+                    <span className="text-charcoal-light">
+                      {as.type === 'refund' ? '退款' : as.type === 'return_refund' ? '退货退款' : '换货'}
+                      {as.refund_amount > 0 ? ` ¥${as.refund_amount}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!showAfterSale ? (
+              <button
+                onClick={() => setShowAfterSale(true)}
+                className="w-full rounded-xl bg-coral/10 py-2.5 text-sm font-medium text-coral hover:bg-coral/20 transition-colors"
+              >
+                申请售后
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-charcoal-light">售后类型</label>
+                  <select
+                    value={asForm.type}
+                    onChange={(e) => setAsForm({ ...asForm, type: e.target.value })}
+                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral"
+                  >
+                    <option value="refund">仅退款</option>
+                    <option value="return_refund">退货退款</option>
+                    <option value="exchange">换货</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-charcoal-light">选择商品</label>
+                  <select
+                    value={asForm.product_id}
+                    onChange={(e) => setAsForm({ ...asForm, product_id: Number(e.target.value) })}
+                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral"
+                  >
+                    <option value={0}>请选择</option>
+                    {order.items?.map((item) => (
+                      <option key={item.product_id} value={item.product_id}>
+                        {item.product?.name || `商品#${item.product_id}`} (购买{item.quantity}件)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-charcoal-light">数量</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={asForm.quantity}
+                    onChange={(e) => setAsForm({ ...asForm, quantity: Number(e.target.value) })}
+                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-charcoal-light">原因</label>
+                  <textarea
+                    value={asForm.reason}
+                    onChange={(e) => setAsForm({ ...asForm, reason: e.target.value })}
+                    rows={2}
+                    className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral resize-none"
+                    placeholder="请描述售后原因"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowAfterSale(false)}
+                    className="flex-1 rounded-xl bg-gray-100 py-2 text-sm text-charcoal-light hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSubmitAfterSale}
+                    className="flex-1 rounded-xl bg-coral py-2 text-sm text-white hover:bg-coral-dark transition-colors"
+                  >
+                    提交
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

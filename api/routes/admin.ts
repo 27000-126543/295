@@ -151,9 +151,13 @@ router.get('/dashboard', authMiddleware, adminMiddleware, async (req: AuthReques
       const trendParams: any[] = []
       let trendWhere = 'WHERE 1=1'
       if (city) { trendWhere += ' AND city = ?'; trendParams.push(city) }
+      trendWhere += ' AND created_at >= ? AND created_at <= ?'
+      trendParams.push(startDate, endDate)
       trendData = trendMonths.map(mth => {
-        const tp = [...trendParams, `${mth}%`]
-        const ord = query(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders ${trendWhere} AND created_at LIKE ?`, tp)
+        const mStart = mth === trendMonths[0] ? startDate : `${mth}-01`
+        const mEnd = mth === trendMonths[trendMonths.length - 1] ? endDate : `${mth}-31`
+        const tp = [...trendParams.slice(0, city ? 1 : 0), mStart, mEnd]
+        const ord = query(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders ${trendWhere}`, tp)
         return { month: mth, revenue: ord[0].total, orders: ord[0].count }
       })
     } else {

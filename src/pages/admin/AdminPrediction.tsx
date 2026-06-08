@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Package, BookOpen, Lightbulb, BarChart3, Star } from "lucide-react";
+import { Download, Package, BookOpen, BarChart3, Calendar, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { adminApi } from "@/utils/api";
 import type { PredictionData, ReportData } from "@/types";
@@ -11,17 +11,12 @@ export default function AdminPrediction() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pred, rep] = await Promise.all([
-        adminApi.prediction(),
-        adminApi.report(),
-      ]);
+      const [pred, rep] = await Promise.all([adminApi.prediction(), adminApi.report()]);
       setPrediction(pred);
       setReport(rep);
     } catch { /* */ }
@@ -32,9 +27,12 @@ export default function AdminPrediction() {
     if (!report) return;
     const csvRows = [
       ["品类", "营收", "占比"].join(","),
-      ...report.categoryRevenue.map((r) =>
-        [r.category, r.revenue, `${r.percentage}%`].join(",")
-      ),
+      ...report.categoryRevenue.map((r) => [r.category, r.revenue, `${r.percentage}%`].join(",")),
+      "",
+      ["指标", "数值"].join(","),
+      ["课程完课率", `${report.summary.courseCompletionRate}%`].join(","),
+      ["用户满意度", String(report.summary.userSatisfaction)].join(","),
+      ["保险赔付率", `${report.summary.insuranceClaimRate}%`].join(","),
     ];
     const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -59,15 +57,14 @@ export default function AdminPrediction() {
               <h3 className="text-sm font-semibold text-charcoal">营收预测</h3>
             </div>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={prediction.revenuePredictions}>
+              <BarChart data={prediction.revenuePredictions}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <XAxis dataKey="category" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
                 <Tooltip />
-                <Line type="monotone" dataKey="predicted" stroke="#FF6B6B" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="upper" stroke="#4ECDC4" strokeWidth={1} strokeDasharray="5 5" dot={false} />
-                <Line type="monotone" dataKey="lower" stroke="#4ECDC4" strokeWidth={1} strokeDasharray="5 5" dot={false} />
-              </LineChart>
+                <Bar dataKey="current_revenue" fill="#4ECDC4" name="当前营收" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="predicted_revenue" fill="#FF6B6B" name="预测营收" radius={[4, 4, 0, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
 
@@ -77,17 +74,68 @@ export default function AdminPrediction() {
               <h3 className="text-sm font-semibold text-charcoal">推荐备货</h3>
             </div>
             <div className="space-y-3">
-              {prediction.recommendedStock.map((item) => (
-                <div
-                  key={item.productId}
-                  className="flex items-center justify-between rounded-xl bg-cream p-3"
-                >
-                  <p className="text-sm font-medium text-charcoal">{item.productName}</p>
-                  <p className="text-sm font-bold text-coral">建议 {item.recommended} 件</p>
+              {prediction.recommendedStock.map((item, i) => (
+                <div key={i} className="flex items-center justify-between rounded-xl bg-cream p-3">
+                  <div>
+                    <p className="text-sm font-medium text-charcoal">{item.name}</p>
+                    <p className="text-[10px] text-charcoal-light">{item.category} · 库存{item.stock} · 销量{item.sales}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-coral">建议 {item.recommended} 件</p>
+                    <p className={`text-[10px] ${item.stock_status === "紧急补货" ? "text-red-500" : item.stock_status === "建议补货" ? "text-amber-500" : "text-green-500"}`}>{item.stock_status}</p>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
+
+          {prediction.coursePredictions.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <BookOpen className="h-5 w-5 text-mint" />
+                <h3 className="text-sm font-semibold text-charcoal">热门课程预测</h3>
+              </div>
+              <div className="space-y-3">
+                {prediction.coursePredictions.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-cream p-3">
+                    <div>
+                      <p className="text-sm font-medium text-charcoal">{c.name}</p>
+                      <p className="text-[10px] text-charcoal-light">{c.category} · 当前预约 {c.currentBookings}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-charcoal">预测 {c.predictedBookings}</p>
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${c.suggestion === "增加排课" ? "bg-orange-100 text-orange-600" : "bg-green-100 text-green-600"}`}>{c.suggestion}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {prediction.holidayImpact.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <Calendar className="h-5 w-5 text-amber-500" />
+                <h3 className="text-sm font-semibold text-charcoal">节假日影响</h3>
+              </div>
+              <div className="space-y-3">
+                {prediction.holidayImpact.map((h, i) => (
+                  <div key={i} className="rounded-xl bg-cream p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      <TrendingUp className={`h-4 w-4 ${h.impactType === "inventory_up" ? "text-coral" : "text-mint"}`} />
+                      <p className="text-sm font-medium text-charcoal">{h.name}</p>
+                    </div>
+                    <p className="text-xs text-charcoal-light mb-2">{h.description}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {h.affectedCategories.map((cat) => (
+                        <span key={cat} className="rounded-full bg-white px-2 py-0.5 text-[10px] text-charcoal-light">{cat}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {prediction.ageDistribution.length > 0 && (
             <div className="rounded-2xl bg-white p-5 card-shadow">
@@ -97,28 +145,17 @@ export default function AdminPrediction() {
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie
-                    data={prediction.ageDistribution.map((d) => ({ name: d.range, value: d.count }))}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={90}
-                    dataKey="value"
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    {prediction.ageDistribution.map((_, index) => (
-                      <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                    ))}
+                  <Pie data={prediction.ageDistribution.map((d) => ({ name: d.age_group, value: d.count }))} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" startAngle={90} endAngle={-270}>
+                    {prediction.ageDistribution.map((_, index) => (<Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />))}
                   </Pie>
                   <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex flex-wrap justify-center gap-3 mt-2">
                 {prediction.ageDistribution.map((d, i) => (
-                  <span key={d.range} className="flex items-center gap-1 text-xs text-charcoal-light">
+                  <span key={d.age_group} className="flex items-center gap-1 text-xs text-charcoal-light">
                     <span className="h-2 w-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                    {d.range} ({d.count})
+                    {d.age_group} ({d.count})
                   </span>
                 ))}
               </div>
@@ -132,15 +169,11 @@ export default function AdminPrediction() {
           <div className="rounded-2xl bg-white p-5 card-shadow">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-charcoal">月度运营报表</h3>
-              <button
-                onClick={handleExport}
-                className="flex items-center gap-1.5 rounded-xl bg-coral/10 px-3 py-1.5 text-xs font-medium text-coral hover:bg-coral/20 transition-colors"
-              >
+              <button onClick={handleExport} className="flex items-center gap-1.5 rounded-xl bg-coral/10 px-3 py-1.5 text-xs font-medium text-coral hover:bg-coral/20 transition-colors">
                 <Download className="h-3.5 w-3.5" />
                 导出报表
               </button>
             </div>
-
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="rounded-xl bg-cream p-3 text-center">
                 <p className="text-lg font-bold text-coral">¥{report.summary.totalRevenue.toLocaleString()}</p>
@@ -155,7 +188,20 @@ export default function AdminPrediction() {
                 <p className="text-[10px] text-charcoal-light">客单价</p>
               </div>
             </div>
-
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="rounded-xl bg-cream p-3 text-center">
+                <p className="text-lg font-bold text-mint">{report.summary.courseCompletionRate}%</p>
+                <p className="text-[10px] text-charcoal-light">课程完课率</p>
+              </div>
+              <div className="rounded-xl bg-cream p-3 text-center">
+                <p className="text-lg font-bold text-amber-500">⭐{report.summary.userSatisfaction}</p>
+                <p className="text-[10px] text-charcoal-light">用户满意度</p>
+              </div>
+              <div className="rounded-xl bg-cream p-3 text-center">
+                <p className="text-lg font-bold text-blue-500">{report.summary.insuranceClaimRate}%</p>
+                <p className="text-[10px] text-charcoal-light">保险赔付率</p>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -169,9 +215,7 @@ export default function AdminPrediction() {
                   {report.categoryRevenue.map((item) => (
                     <tr key={item.category} className="border-b border-gray-50">
                       <td className="py-2.5 text-charcoal">{item.category}</td>
-                      <td className="py-2.5 text-right text-charcoal">
-                        ¥{item.revenue.toLocaleString()}
-                      </td>
+                      <td className="py-2.5 text-right text-charcoal">¥{item.revenue.toLocaleString()}</td>
                       <td className="py-2.5 text-right text-charcoal-light">{item.percentage}%</td>
                     </tr>
                   ))}
@@ -180,23 +224,25 @@ export default function AdminPrediction() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="rounded-2xl bg-white p-4 card-shadow text-center">
-              <p className="text-3xl font-bold text-coral">{report.courseStats.completionRate}%</p>
-              <p className="text-xs text-charcoal-light mt-1">课程完课率</p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 card-shadow text-center">
-              <div className="flex items-center justify-center gap-1">
-                <Star className="h-5 w-5 fill-amber-400 text-amber-400" />
-                <p className="text-3xl font-bold text-mint">{report.courseStats.avgRating}</p>
+          {report.courseStats.length > 0 && (
+            <div className="rounded-2xl bg-white p-5 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <BookOpen className="h-5 w-5 text-mint" />
+                <h3 className="text-sm font-semibold text-charcoal">课程统计</h3>
               </div>
-              <p className="text-xs text-charcoal-light mt-1">课程平均评分</p>
+              <div className="space-y-3">
+                {report.courseStats.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-cream p-3">
+                    <div>
+                      <p className="text-sm font-medium text-charcoal">{c.name}</p>
+                      <p className="text-[10px] text-charcoal-light">{c.category} · 已预约{c.total_booked}/容量{c.total_capacity}</p>
+                    </div>
+                    <p className="text-sm font-bold text-mint">{c.completionRate}%</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="rounded-2xl bg-white p-4 card-shadow text-center">
-              <p className="text-3xl font-bold text-blue-500">{report.courseStats.totalCourses}</p>
-              <p className="text-xs text-charcoal-light mt-1">课程总数</p>
-            </div>
-          </div>
+          )}
 
           {report.orderStatusDist.length > 0 && (
             <div className="rounded-2xl bg-white p-5 card-shadow">
@@ -217,10 +263,16 @@ export default function AdminPrediction() {
             <div className="rounded-2xl bg-white p-5 card-shadow">
               <h3 className="text-sm font-semibold text-charcoal mb-4">热销商品</h3>
               <div className="space-y-3">
-                {report.topProducts.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-xl bg-cream p-3">
-                    <p className="text-sm font-medium text-charcoal">{item.name}</p>
-                    <p className="text-sm font-bold text-coral">{item.sales} 件</p>
+                {report.topProducts.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-cream p-3">
+                    <div>
+                      <p className="text-sm font-medium text-charcoal">{item.name}</p>
+                      <p className="text-[10px] text-charcoal-light">{item.category}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-coral">{item.total_sold} 件</p>
+                      <p className="text-[10px] text-charcoal-light">¥{item.revenue}</p>
+                    </div>
                   </div>
                 ))}
               </div>

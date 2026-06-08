@@ -67,9 +67,9 @@ export const authApi = {
 
 export const babyApi = {
   list: () => request<Baby[]>("/api/babies"),
-  create: (data: { name: string; gender: "male" | "female"; birthDate: string; avatar?: string }) =>
+  create: (data: { name: string; gender: "male" | "female"; birthDate: string; avatar?: string; growth?: { height: number; weight: number; record_date: string }[]; vaccines?: { vaccine_name: string; vaccinated_date?: string; hospital?: string; status?: string }[] }) =>
     request<Baby>("/api/babies", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: number, data: Partial<Baby>) =>
+  update: (id: number, data: Partial<Baby> & { growth?: { height: number; weight: number; record_date: string }[]; vaccines?: { vaccine_name: string; vaccinated_date?: string; hospital?: string; status?: string }[] }) =>
     request<Baby>(`/api/babies/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: number) =>
     request<{ success: boolean }>(`/api/babies/${id}`, { method: "DELETE" }),

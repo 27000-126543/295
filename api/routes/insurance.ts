@@ -4,6 +4,8 @@ import { authMiddleware, adminMiddleware, type AuthRequest } from '../middleware
 
 const router = Router()
 
+const CLAIM_THRESHOLD = 5000
+
 router.get('/products', async (req, res: Response): Promise<void> => {
   try {
     const { type } = req.query
@@ -78,7 +80,8 @@ router.post('/claims', authMiddleware, async (req: AuthRequest, res: Response): 
       res.status(404).json({ success: false, error: '保单不存在' })
       return
     }
-    run('INSERT INTO claims (policy_id, user_id, amount, description, documents, status) VALUES (?, ?, ?, ?, ?, ?)', [policy_id, req.user!.id, amount, description, documents || null, 'initial_review'])
+    const claimStatus = amount > CLAIM_THRESHOLD ? 'escalated' : 'initial_review'
+    run('INSERT INTO claims (policy_id, user_id, amount, description, documents, status) VALUES (?, ?, ?, ?, ?, ?)', [policy_id, req.user!.id, amount, description, documents || null, claimStatus])
     const claims = query('SELECT * FROM claims WHERE user_id = ? ORDER BY id DESC LIMIT 1', [req.user!.id])
     res.json({ success: true, data: claims[0] })
   } catch (e: any) {
@@ -113,7 +116,7 @@ router.put('/claims/:id/review', authMiddleware, adminMiddleware, async (req: Au
   try {
     const { id } = req.params
     const { status, review_note } = req.body
-    if (!status || !['approved', 'rejected'].includes(status)) {
+    if (!status || !['approved', 'rejected', 'paid'].includes(status)) {
       res.status(400).json({ success: false, error: '审核状态无效' })
       return
     }
@@ -122,7 +125,8 @@ router.put('/claims/:id/review', authMiddleware, adminMiddleware, async (req: Au
       res.status(404).json({ success: false, error: '理赔记录不存在' })
       return
     }
-    run('UPDATE claims SET status = ?, review_note = ?, reviewed_at = datetime("now") WHERE id = ?', [status, review_note || null, id])
+    const finalStatus = status === 'approved' ? 'paid' : status
+    run('UPDATE claims SET status = ?, review_note = ?, reviewed_at = datetime("now") WHERE id = ?', [finalStatus, review_note || null, id])
     const updated = query('SELECT * FROM claims WHERE id = ?', [id])
     res.json({ success: true, data: updated[0] })
   } catch (e: any) {

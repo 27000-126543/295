@@ -31,6 +31,7 @@ export async function initDb() {
     CREATE TABLE claims (id INTEGER PRIMARY KEY AUTOINCREMENT, policy_id INTEGER NOT NULL, user_id INTEGER NOT NULL, amount REAL NOT NULL, documents TEXT, description TEXT, status TEXT DEFAULT 'initial_review', review_note TEXT, created_at TEXT DEFAULT (datetime('now')), reviewed_at TEXT);
     CREATE TABLE member_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE NOT NULL, level TEXT DEFAULT 'normal', annual_spending REAL DEFAULT 0, activity_score INTEGER DEFAULT 0, points INTEGER DEFAULT 0, updated_at TEXT DEFAULT (datetime('now')));
     CREATE TABLE coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, value REAL NOT NULL, min_spend REAL DEFAULT 0, status TEXT DEFAULT 'available', expires_at TEXT, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE warehouses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL);
   `)
 
   const imgBase = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt='
@@ -121,6 +122,13 @@ export async function initDb() {
   for (const s of scheduleData) {
     db.run(`INSERT INTO schedules (course_id, teacher_id, date, start_time, end_time, capacity, booked) VALUES (?, ?, ?, ?, ?, ?, ?)`, s as any)
   }
+
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东仓', '上海', 31.23, 121.47)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华南仓', '广州', 23.13, 113.26)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华中仓', '武汉', 30.59, 114.31)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东2仓', '杭州', 30.27, 120.15)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华南2仓', '深圳', 22.54, 114.06)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东3仓', '苏州', 31.30, 120.62)`)
 
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (2, 1, 2, '1段')`)
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (2, 7, 3, 'NB号')`)

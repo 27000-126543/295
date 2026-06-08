@@ -12,7 +12,7 @@ interface BabyState {
   loading: boolean;
   fetchBabies: () => Promise<void>;
   selectBaby: (baby: Baby) => void;
-  createBaby: (data: { name: string; gender: "male" | "female"; birthDate: string; avatar?: string }) => Promise<void>;
+  createBaby: (data: { name: string; gender: "male" | "female"; birthDate: string; avatar?: string; growth?: { height: number; weight: number; record_date: string }[]; vaccines?: { vaccine_name: string; vaccinated_date?: string; hospital?: string; status?: string }[] }) => Promise<void>;
   fetchGrowth: (babyId: number) => Promise<void>;
   addGrowth: (babyId: number, data: { height: number; weight: number; date: string }) => Promise<void>;
   fetchVaccines: (babyId: number) => Promise<void>;

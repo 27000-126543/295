@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
-import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket } from "lucide-react";
+import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { adminApi } from "@/utils/api";
 import type { DashboardData, PredictionData } from "@/types";
 
 const OVERVIEW_CARDS: { key: keyof DashboardData["overview"]; label: string; icon: typeof ShoppingCart; format: (v: number) => string }[] = [
-  { key: "totalUsers", label: "用户总数", icon: Users, format: (v) => v.toLocaleString() },
-  { key: "totalOrders", label: "订单总数", icon: ShoppingCart, format: (v) => v.toLocaleString() },
+  { key: "totalOrders", label: "订单量", icon: ShoppingCart, format: (v) => v.toLocaleString() },
+  { key: "courseConsumptionRate", label: "课程消耗率", icon: BookOpen, format: (v) => `${v}%` },
+  { key: "communityActivity", label: "社区活跃度", icon: Activity, format: (v) => `${v} 日活` },
+  { key: "insuranceClaimAvgDays", label: "理赔时效", icon: Clock, format: (v) => `${v} 天` },
+  { key: "memberGrowth", label: "会员增长", icon: Users, format: (v) => `+${v}` },
   { key: "totalRevenue", label: "总营收", icon: DollarSign, format: (v) => `¥${v.toLocaleString()}` },
   { key: "totalBabies", label: "宝宝总数", icon: Baby, format: (v) => v.toLocaleString() },
-  { key: "totalCourses", label: "课程总数", icon: BookOpen, format: (v) => v.toLocaleString() },
-  { key: "totalPosts", label: "社区帖子", icon: Users, format: (v) => v.toLocaleString() },
   { key: "totalTickets", label: "课程券", icon: Ticket, format: (v) => v.toLocaleString() },
 ];
 
@@ -67,10 +68,12 @@ export default function AdminDashboard() {
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral"
             >
               <option value="">全部城市</option>
-              <option value="北京">北京</option>
               <option value="上海">上海</option>
               <option value="广州">广州</option>
               <option value="深圳">深圳</option>
+              <option value="杭州">杭州</option>
+              <option value="武汉">武汉</option>
+              <option value="苏州">苏州</option>
             </select>
           </div>
           <div className="flex-1 min-w-[120px]">
@@ -103,7 +106,7 @@ export default function AdminDashboard() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {OVERVIEW_CARDS.map((card) => {
-              const value = dashboard.overview[card.key];
+              const value = dashboard.overview[card.key] ?? 0;
               return (
                 <div key={card.key} className="rounded-2xl bg-white p-4 card-shadow">
                   <div className="flex items-center justify-between mb-2">
@@ -126,7 +129,7 @@ export default function AdminDashboard() {
                   <XAxis dataKey="category" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="sales" fill="#FF6B6B" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="revenue" fill="#FF6B6B" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -136,7 +139,7 @@ export default function AdminDashboard() {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
-                    data={dashboard.courseBookings.map((b) => ({ name: b.courseName, value: b.bookings }))}
+                    data={dashboard.courseBookings.map((b) => ({ name: b.name, value: b.total_booked }))}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -154,9 +157,9 @@ export default function AdminDashboard() {
               </ResponsiveContainer>
               <div className="flex flex-wrap justify-center gap-3 mt-2">
                 {dashboard.courseBookings.map((b, i) => (
-                  <span key={b.courseId} className="flex items-center gap-1 text-xs text-charcoal-light">
+                  <span key={b.name} className="flex items-center gap-1 text-xs text-charcoal-light">
                     <span className="h-2 w-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                    {b.courseName} {b.bookings}
+                    {b.name} {b.total_booked}
                   </span>
                 ))}
               </div>
@@ -196,10 +199,11 @@ export default function AdminDashboard() {
                 <h3 className="text-sm font-semibold text-charcoal">推荐备货</h3>
               </div>
               <div className="space-y-2">
-                {prediction.recommendedStock.map((item) => (
-                  <p key={item.productId} className="text-sm text-charcoal-light">
-                    • {item.productName}：建议备货 {item.recommended} 件
-                  </p>
+                {prediction.recommendedStock.slice(0, 5).map((item) => (
+                  <div key={item.name} className="flex items-center justify-between text-sm">
+                    <span className="text-charcoal-light">{item.name}</span>
+                    <span className="font-bold text-coral">建议 {item.recommended} 件</span>
+                  </div>
                 ))}
               </div>
             </div>

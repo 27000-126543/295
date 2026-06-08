@@ -15,14 +15,29 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response): Promise
 
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { name, gender, birth_date, avatar } = req.body
+    const { name, gender, birth_date, avatar, growth, vaccines } = req.body
     if (!name || !gender || !birth_date) {
       res.status(400).json({ success: false, error: '姓名、性别和出生日期不能为空' })
       return
     }
     run('INSERT INTO babies (user_id, name, gender, birth_date, avatar) VALUES (?, ?, ?, ?, ?)', [req.user!.id, name, gender, birth_date, avatar || null])
     const babies = query('SELECT * FROM babies WHERE user_id = ? ORDER BY id DESC LIMIT 1', [req.user!.id])
-    res.json({ success: true, data: babies[0] })
+    const baby = babies[0]
+    if (growth && Array.isArray(growth)) {
+      for (const g of growth) {
+        if (g.height && g.weight && g.record_date) {
+          run('INSERT INTO growth_records (baby_id, height, weight, record_date) VALUES (?, ?, ?, ?)', [baby.id, g.height, g.weight, g.record_date])
+        }
+      }
+    }
+    if (vaccines && Array.isArray(vaccines)) {
+      for (const v of vaccines) {
+        if (v.vaccine_name) {
+          run('INSERT INTO vaccine_records (baby_id, vaccine_name, vaccinated_date, hospital, status) VALUES (?, ?, ?, ?, ?)', [baby.id, v.vaccine_name, v.vaccinated_date || null, v.hospital || null, v.status || 'completed'])
+        }
+      }
+    }
+    res.json({ success: true, data: baby })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }
@@ -36,8 +51,22 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response): Prom
       res.status(404).json({ success: false, error: '宝宝档案不存在' })
       return
     }
-    const { name, gender, birth_date, avatar } = req.body
+    const { name, gender, birth_date, avatar, growth, vaccines } = req.body
     run('UPDATE babies SET name = ?, gender = ?, birth_date = ?, avatar = ? WHERE id = ?', [name || existing[0].name, gender || existing[0].gender, birth_date || existing[0].birth_date, avatar !== undefined ? avatar : existing[0].avatar, id])
+    if (growth && Array.isArray(growth)) {
+      for (const g of growth) {
+        if (g.height && g.weight && g.record_date) {
+          run('INSERT INTO growth_records (baby_id, height, weight, record_date) VALUES (?, ?, ?, ?)', [id, g.height, g.weight, g.record_date])
+        }
+      }
+    }
+    if (vaccines && Array.isArray(vaccines)) {
+      for (const v of vaccines) {
+        if (v.vaccine_name) {
+          run('INSERT INTO vaccine_records (baby_id, vaccine_name, vaccinated_date, hospital, status) VALUES (?, ?, ?, ?, ?)', [id, v.vaccine_name, v.vaccinated_date || null, v.hospital || null, v.status || 'completed'])
+        }
+      }
+    }
     const updated = query('SELECT * FROM babies WHERE id = ?', [id])
     res.json({ success: true, data: updated[0] })
   } catch (e: any) {

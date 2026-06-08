@@ -51,27 +51,68 @@ function AddBabyModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; gender: "male" | "female"; birthDate: string }) => void;
+  onSubmit: (data: {
+    name: string;
+    gender: "male" | "female";
+    birthDate: string;
+    growth?: { height: number; weight: number; record_date: string }[];
+    vaccines?: { vaccine_name: string; vaccinated_date?: string; hospital?: string; status?: string }[];
+  }) => void;
 }) {
   const [name, setName] = useState("");
   const [gender, setGender] = useState<"male" | "female">("male");
   const [birthDate, setBirthDate] = useState("");
+  const [height, setHeight] = useState("");
+  const [weight, setWeight] = useState("");
+  const [recordDate, setRecordDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [vaccineList, setVaccineList] = useState<{ name: string; date: string; hospital: string }[]>([]);
 
   if (!open) return null;
 
+  const handleAddVaccine = () => {
+    setVaccineList([...vaccineList, { name: "", date: dayjs().format("YYYY-MM-DD"), hospital: "" }]);
+  };
+
+  const handleRemoveVaccine = (idx: number) => {
+    setVaccineList(vaccineList.filter((_, i) => i !== idx));
+  };
+
+  const handleVaccineChange = (idx: number, field: "name" | "date" | "hospital", value: string) => {
+    const updated = [...vaccineList];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setVaccineList(updated);
+  };
+
   const handleSubmit = () => {
     if (!name.trim() || !birthDate) return;
-    onSubmit({ name: name.trim(), gender, birthDate });
+    const data: any = { name: name.trim(), gender, birthDate };
+    if (height && weight && recordDate) {
+      data.growth = [{ height: parseFloat(height), weight: parseFloat(weight), record_date: recordDate }];
+    }
+    const validVaccines = vaccineList.filter((v) => v.name.trim());
+    if (validVaccines.length > 0) {
+      data.vaccines = validVaccines.map((v) => ({
+        vaccine_name: v.name.trim(),
+        vaccinated_date: v.date || undefined,
+        hospital: v.hospital || undefined,
+        status: v.date ? "completed" : "pending",
+      }));
+    }
+    onSubmit(data);
     setName("");
     setGender("male");
     setBirthDate("");
+    setHeight("");
+    setWeight("");
+    setRecordDate(dayjs().format("YYYY-MM-DD"));
+    setVaccineList([]);
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
       <div
-        className="w-full max-w-lg animate-slide-up rounded-t-3xl bg-white p-6"
+        className="w-full max-w-lg animate-slide-up rounded-t-3xl bg-white p-6 max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-6 flex items-center justify-between">
@@ -128,6 +169,92 @@ function AddBabyModal({
               className="w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition-colors focus:border-coral"
             />
           </div>
+
+          <div className="rounded-2xl bg-cream p-4">
+            <h3 className="mb-3 text-sm font-semibold text-charcoal">成长记录（选填）</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-charcoal-light">身高(cm)</label>
+                <input
+                  type="number"
+                  value={height}
+                  onChange={(e) => setHeight(e.target.value)}
+                  placeholder="65"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-coral"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-charcoal-light">体重(kg)</label>
+                <input
+                  type="number"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="7.0"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-coral"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-charcoal-light">记录日期</label>
+                <input
+                  type="date"
+                  value={recordDate}
+                  onChange={(e) => setRecordDate(e.target.value)}
+                  max={dayjs().format("YYYY-MM-DD")}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-coral"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-green-50 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-charcoal">疫苗记录（选填）</h3>
+              <button
+                onClick={handleAddVaccine}
+                className="flex items-center gap-1 rounded-full bg-green-500 px-3 py-1 text-xs font-medium text-white"
+              >
+                <Plus className="h-3 w-3" /> 添加
+              </button>
+            </div>
+            {vaccineList.length === 0 ? (
+              <p className="text-xs text-charcoal-light">暂无疫苗记录，点击添加</p>
+            ) : (
+              <div className="space-y-3">
+                {vaccineList.map((v, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <div className="flex-1 space-y-2">
+                      <input
+                        value={v.name}
+                        onChange={(e) => handleVaccineChange(idx, "name", e.target.value)}
+                        placeholder="疫苗名称"
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:border-coral"
+                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          value={v.date}
+                          onChange={(e) => handleVaccineChange(idx, "date", e.target.value)}
+                          className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:border-coral"
+                        />
+                        <input
+                          value={v.hospital}
+                          onChange={(e) => handleVaccineChange(idx, "hospital", e.target.value)}
+                          placeholder="接种医院"
+                          className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:border-coral"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveVaccine(idx)}
+                      className="mt-1 flex h-7 w-7 items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <button
@@ -151,7 +278,7 @@ export default function BabyList() {
     fetchBabies();
   }, [fetchBabies]);
 
-  const handleAddBaby = async (data: { name: string; gender: "male" | "female"; birthDate: string }) => {
+  const handleAddBaby = async (data: any) => {
     await createBaby(data);
   };
 

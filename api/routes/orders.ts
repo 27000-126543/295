@@ -21,16 +21,37 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       total += price * item.quantity
       orderItems.push({ product_id: item.product_id, quantity: item.quantity, price, spec: item.spec || null })
     }
-    const firstProduct = query('SELECT * FROM products WHERE id = ?', [items[0].product_id])
-    const warehouse = firstProduct.length > 0 ? firstProduct[0].warehouse_city + '仓' : null
-    run('INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)', [req.user!.id, total, 'pending', address, city || null, warehouse, payment_method || 'wechat'])
+    const cityCoords: Record<string, [number, number]> = {
+      '北京': [39.90, 116.40], '上海': [31.23, 121.47], '广州': [23.13, 113.26],
+      '深圳': [22.54, 114.06], '杭州': [30.27, 120.15], '武汉': [30.59, 114.31],
+      '苏州': [31.30, 120.62], '成都': [30.57, 104.07], '南京': [32.06, 118.80],
+      '重庆': [29.56, 106.55],
+    }
+    let warehouseName: string | null = null
+    if (city && cityCoords[city]) {
+      const [cLat, cLng] = cityCoords[city]
+      const warehouses = query('SELECT * FROM warehouses')
+      let minDist = Infinity
+      for (const w of warehouses) {
+        const dist = Math.sqrt((cLat - w.lat) ** 2 + (cLng - w.lng) ** 2)
+        if (dist < minDist) {
+          minDist = dist
+          warehouseName = w.name
+        }
+      }
+    }
+    if (!warehouseName) {
+      const firstProduct = query('SELECT * FROM products WHERE id = ?', [items[0].product_id])
+      warehouseName = firstProduct.length > 0 ? firstProduct[0].warehouse_city + '仓' : null
+    }
+    run('INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)', [req.user!.id, total, 'pending', address, city || null, warehouseName, payment_method || 'wechat'])
     const orderResult = query('SELECT id FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 1', [req.user!.id])
     const orderId = orderResult[0].id
     for (const oi of orderItems) {
       run('INSERT INTO order_items (order_id, product_id, quantity, price, spec) VALUES (?, ?, ?, ?, ?)', [orderId, oi.product_id, oi.quantity, oi.price, oi.spec])
       run('UPDATE products SET stock = stock - ?, sales = sales + ? WHERE id = ?', [oi.quantity, oi.quantity, oi.product_id])
     }
-    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [orderId, 'created', '订单已创建', warehouse || '仓库'])
+    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [orderId, 'created', `订单已创建，由${warehouseName}发货`, warehouseName || '仓库'])
     for (const item of items) {
       run('DELETE FROM cart_items WHERE user_id = ? AND product_id = ?', [req.user!.id, item.product_id])
     }

@@ -263,23 +263,29 @@ export interface DashboardData {
     totalCourses: number;
     totalPosts: number;
     totalTickets: number;
+    courseConsumptionRate: number;
+    communityActivity: number;
+    insuranceClaimAvgDays: number;
+    memberGrowth: number;
   };
   recentOrders: Order[];
-  categorySales: { category: string; sales: number }[];
-  courseBookings: { courseId: number; courseName: string; bookings: number }[];
+  categorySales: { category: string; revenue: number; quantity: number }[];
+  courseBookings: { name: string; category: string; total_booked: number }[];
 }
 
 export interface PredictionData {
-  revenuePredictions: { month: string; predicted: number; lower: number; upper: number }[];
-  ageDistribution: { range: string; count: number }[];
-  recommendedStock: { productId: number; productName: string; recommended: number }[];
+  revenuePredictions: { category: string; current_revenue: number; predicted_revenue: number; growth_rate: number; confidence: number }[];
+  ageDistribution: { age_group: string; count: number }[];
+  recommendedStock: { name: string; category: string; stock: number; sales: number; stock_status: string; recommended: number }[];
+  coursePredictions: { name: string; category: string; currentBookings: number; predictedBookings: number; suggestion: string }[];
+  holidayImpact: { name: string; impactType: string; description: string; affectedCategories: string[] }[];
 }
 
 export interface ReportData {
-  summary: { totalRevenue: number; totalOrders: number; avgOrderValue: number };
+  summary: { totalRevenue: number; totalOrders: number; avgOrderValue: number; newUsers: number; courseCompletionRate: number; userSatisfaction: number; insuranceClaimRate: number };
   categoryRevenue: { category: string; revenue: number; percentage: number }[];
   orderStatusDist: { status: string; count: number }[];
-  topProducts: { id: number; name: string; sales: number }[];
-  courseStats: { totalCourses: number; completionRate: number; avgRating: number };
-  monthlyTrend: { month: string; revenue: number; orders: number }[];
+  topProducts: { name: string; category: string; total_sold: number; revenue: number }[];
+  courseStats: { name: string; category: string; total_booked: number; total_capacity: number; completionRate: number }[];
+  monthlyTrend: { month: string; revenue: number; orders: number; users: number }[];
 }

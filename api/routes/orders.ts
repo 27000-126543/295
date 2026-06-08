@@ -1,6 +1,6 @@
 import { Router, type Response } from 'express'
 import { query, run } from '../db.js'
-import { authMiddleware, type AuthRequest } from '../middleware/auth.js'
+import { authMiddleware, adminMiddleware, type AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -42,7 +42,12 @@ function getWarehousesByDistance(city: string) {
     .sort((a: any, b: any) => a.distance - b.distance)
 }
 
-function checkWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]): { canFulfill: boolean; details: { productId: number; needed: number; available: number }[] } {
+function getTotalWarehouseStock(productId: number): number {
+  const result = query('SELECT COALESCE(SUM(stock), 0) as total FROM warehouse_inventory WHERE product_id = ?', [productId])
+  return result[0].total
+}
+
+function checkSingleWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]): { canFulfill: boolean; details: { productId: number; needed: number; available: number }[] } {
   const details = productIds.map((pid, i) => {
     const inv = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [warehouseId, pid])
     const available = inv.length > 0 ? inv[0].stock : 0
@@ -54,7 +59,7 @@ function checkWarehouseStock(warehouseId: number, productIds: number[], quantiti
 function allocateWarehouse(city: string, productIds: number[], quantities: number[]): { warehouseId: number; warehouseName: string; city: string } | null {
   const sorted = getWarehousesByDistance(city)
   for (const wh of sorted) {
-    const check = checkWarehouseStock(wh.id, productIds, quantities)
+    const check = checkSingleWarehouseStock(wh.id, productIds, quantities)
     if (check.canFulfill) {
       return { warehouseId: wh.id, warehouseName: wh.name, city: wh.city }
     }
@@ -63,9 +68,6 @@ function allocateWarehouse(city: string, productIds: number[], quantities: numbe
         run('INSERT INTO stockout_logs (warehouse_id, product_id, requested, available) VALUES (?, ?, ?, ?)', [wh.id, d.productId, d.needed, d.available])
       }
     }
-  }
-  if (sorted.length > 0) {
-    return { warehouseId: sorted[0].id, warehouseName: sorted[0].name, city: sorted[0].city }
   }
   return null
 }
@@ -117,7 +119,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       const product = products[0]
       const price = product.price
       total += price * item.quantity
-      orderItems.push({ product_id: item.product_id, quantity: item.quantity, price, spec: item.spec || null })
+      orderItems.push({ product_id: item.product_id, quantity: item.quantity, price, spec: item.spec || null, product_name: product.name })
       productIds.push(item.product_id)
       quantities.push(item.quantity)
     }
@@ -127,13 +129,28 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    const allocation = allocateWarehouse(resolvedCity, productIds, quantities)
-    const warehouseName = allocation ? allocation.warehouseName : '默认仓'
-    const warehouseId = allocation ? allocation.warehouseId : null
-
-    if (warehouseId) {
-      deductWarehouseStock(warehouseId, productIds, quantities)
+    const outOfStockItems: string[] = []
+    for (let i = 0; i < productIds.length; i++) {
+      const totalStock = getTotalWarehouseStock(productIds[i])
+      if (totalStock < quantities[i]) {
+        outOfStockItems.push(`${orderItems[i].product_name}（需${quantities[i]}件，全仓仅${totalStock}件）`)
+      }
     }
+    if (outOfStockItems.length > 0) {
+      res.status(400).json({ success: false, error: `库存不足：${outOfStockItems.join('；')}` })
+      return
+    }
+
+    const allocation = allocateWarehouse(resolvedCity, productIds, quantities)
+    if (!allocation) {
+      res.status(400).json({ success: false, error: '所有仓库均无足够库存，无法完成下单' })
+      return
+    }
+
+    const warehouseName = allocation.warehouseName
+    const warehouseId = allocation.warehouseId
+
+    deductWarehouseStock(warehouseId, productIds, quantities)
     for (const oi of orderItems) {
       run('UPDATE products SET stock = stock - ?, sales = sales + ? WHERE id = ?', [oi.quantity, oi.quantity, oi.product_id])
     }
@@ -234,6 +251,10 @@ router.put('/:id/cancel', authMiddleware, async (req: AuthRequest, res: Response
       res.status(400).json({ success: false, error: '已签收订单不可取消' })
       return
     }
+    if (order.status === 'delivery_failed') {
+      res.status(400).json({ success: false, error: '发货失败订单请通过发货失败回滚处理' })
+      return
+    }
     run("UPDATE orders SET status = 'cancelled' WHERE id = ?", [id])
 
     const orderItems = query('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id])
@@ -243,13 +264,52 @@ router.put('/:id/cancel', authMiddleware, async (req: AuthRequest, res: Response
 
     const warehouses = query("SELECT id FROM warehouses WHERE name = ?", [order.warehouse])
     if (warehouses.length > 0) {
-      const productIds = orderItems.map((oi: any) => oi.product_id)
-      const quantities = orderItems.map((oi: any) => oi.quantity)
-      rollbackWarehouseStock(warehouses[0].id, productIds, quantities)
+      const pids = orderItems.map((oi: any) => oi.product_id)
+      const qts = orderItems.map((oi: any) => oi.quantity)
+      rollbackWarehouseStock(warehouses[0].id, pids, qts)
     }
 
     run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [id, 'cancelled', '订单已取消，库存已回滚', order.warehouse || '系统'])
     res.json({ success: true, data: { id: Number(id), status: 'cancelled' } })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.put('/:id/delivery-failed', adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+    const orders = query('SELECT * FROM orders WHERE id = ?', [id])
+    if (orders.length === 0) {
+      res.status(404).json({ success: false, error: '订单不存在' })
+      return
+    }
+    const order = orders[0]
+    if (order.status !== 'shipped' && order.status !== 'pending' && order.status !== 'paid') {
+      res.status(400).json({ success: false, error: `当前状态${order.status}不可标记发货失败，仅pending/paid/shipped可操作` })
+      return
+    }
+    if (order.status === 'delivery_failed') {
+      res.status(400).json({ success: false, error: '订单已标记发货失败，请勿重复操作' })
+      return
+    }
+
+    run("UPDATE orders SET status = 'delivery_failed' WHERE id = ?", [id])
+
+    const orderItems = query('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id])
+    for (const oi of orderItems) {
+      run('UPDATE products SET stock = stock + ?, sales = sales - ? WHERE id = ?', [oi.quantity, oi.quantity, oi.product_id])
+    }
+
+    const warehouses = query("SELECT id FROM warehouses WHERE name = ?", [order.warehouse])
+    if (warehouses.length > 0) {
+      const pids = orderItems.map((oi: any) => oi.product_id)
+      const qts = orderItems.map((oi: any) => oi.quantity)
+      rollbackWarehouseStock(warehouses[0].id, pids, qts)
+    }
+
+    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [id, 'delivery_failed', `发货失败，库存已回滚至${order.warehouse || '系统'}`, order.warehouse || '系统'])
+    res.json({ success: true, data: { id: Number(id), status: 'delivery_failed' } })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }

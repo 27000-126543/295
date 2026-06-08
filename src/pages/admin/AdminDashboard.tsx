@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity, MapPin, Warehouse } from "lucide-react";
+import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity, MapPin, Warehouse, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { adminApi } from "@/utils/api";
 import type { DashboardData, PredictionData } from "@/types";
@@ -53,6 +53,21 @@ export default function AdminDashboard() {
   };
 
   const handleFilter = () => { loadData(); loadPrediction(); };
+
+  const handleDeliveryFailed = async (orderId: number) => {
+    try {
+      await adminApi.markDeliveryFailed(orderId);
+      loadData();
+      loadPrediction();
+    } catch (e: any) {
+      alert(e.message || '操作失败');
+    }
+  };
+
+  const statusLabel: Record<string, string> = {
+    pending: '待付款', paid: '已付款', shipped: '已发货', delivered: '已签收',
+    cancelled: '已取消', delivery_failed: '发货失败',
+  };
 
   return (
     <div className="space-y-6">

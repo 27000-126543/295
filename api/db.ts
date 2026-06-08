@@ -131,6 +131,7 @@ export async function initDb() {
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东2仓', '杭州', 30.27, 120.15)`)
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华南2仓', '深圳', 22.54, 114.06)`)
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东3仓', '苏州', 31.30, 120.62)`)
+  db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华北仓', '北京', 39.90, 116.40)`)
 
   const warehouseInventory: [number, number, number][] = [
     [1, 1, 60], [1, 2, 50], [1, 3, 40], [1, 7, 100], [1, 8, 90], [1, 9, 80], [1, 10, 70],
@@ -145,6 +146,8 @@ export async function initDb() {
     [5, 1, 20], [5, 7, 50],
     [6, 7, 120], [6, 8, 110], [6, 9, 100], [6, 10, 90],
     [6, 1, 30], [6, 15, 40],
+    [7, 1, 50], [7, 2, 40], [7, 7, 80], [7, 15, 60],
+    [7, 8, 60], [7, 9, 50], [7, 10, 40],
   ]
   for (const [wid, pid, stock] of warehouseInventory) {
     db.run(`INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) VALUES (?, ?, ?)`, [wid, pid, stock])
@@ -154,9 +157,9 @@ export async function initDb() {
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (2, 7, 3, 'NB号')`)
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (3, 15, 1, NULL)`)
 
-  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (2, 536, 'delivered', '上海市浦东新区世纪大道100号', '上海', '上海仓', 'wechat')`)
-  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (2, 267, 'shipped', '上海市浦东新区世纪大道100号', '上海', '上海仓', 'alipay')`)
-  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (3, 58, 'pending', '北京市朝阳区建国门外大街50号', '武汉', '武汉仓', 'wechat')`)
+  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (2, 536, 'delivered', '上海市浦东新区世纪大道100号', '上海', '华东仓', 'wechat')`)
+  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (2, 267, 'shipped', '上海市浦东新区世纪大道100号', '上海', '华东仓', 'alipay')`)
+  db.run(`INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (3, 58, 'pending', '北京市朝阳区建国门外大街50号', '北京', '华北仓', 'wechat')`)
 
   db.run(`INSERT INTO order_items (order_id, product_id, quantity, price, spec) VALUES (1, 1, 2, 268, '1段')`)
   db.run(`INSERT INTO order_items (order_id, product_id, quantity, price, spec) VALUES (2, 2, 1, 248, '2段')`)
@@ -165,7 +168,8 @@ export async function initDb() {
 
   db.run(`INSERT INTO logistics_records (order_id, status, description, location) VALUES (1, 'delivered', '已签收，签收人：本人', '上海浦东新区')`)
   db.run(`INSERT INTO logistics_records (order_id, status, description, location) VALUES (2, 'shipped', '运输中，预计6月10日送达', '上海转运中心')`)
-  db.run(`INSERT INTO logistics_records (order_id, status, description, location) VALUES (2, 'packed', '已打包，等待发货', '上海仓')`)
+  db.run(`INSERT INTO logistics_records (order_id, status, description, location) VALUES (2, 'packed', '已打包，等待发货', '华东仓')`)
+  db.run(`INSERT INTO logistics_records (order_id, status, description, location) VALUES (3, 'created', '订单已创建，由华北仓发货', '华北仓')`)
 
   db.run(`INSERT INTO posts (user_id, content, images, tags, like_count, comment_count) VALUES (2, '今天小萌第一次自己站起来了！太感动了，记录一下这个里程碑时刻~', '${imgBase}baby%20standing%20first%20time${imgSize}', '成长记录,里程碑', 32, 8)`)
   db.run(`INSERT INTO posts (user_id, content, images, tags, like_count, comment_count) VALUES (2, '贝贝奶粉真的很不错，小帅喝了之后消化好了很多，推荐给大家！', '${imgBase}baby%20drinking%20milk%20happy${imgSize}', '好物推荐,奶粉', 18, 5)`)

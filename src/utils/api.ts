@@ -194,4 +194,6 @@ export const adminApi = {
     const qs = query.toString();
     return request<ReportData>(`/api/admin/monthly-report${qs ? `?${qs}` : ""}`);
   },
+  markDeliveryFailed: (orderId: number) =>
+    request<{ id: number; status: string }>(`/api/orders/${orderId}/delivery-failed`, { method: "PUT" }),
 };

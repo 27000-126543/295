@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ShoppingCart, Minus, Plus, Check } from "lucide-react";
+import { ShoppingCart, Minus, Plus, Check, MapPin, Package } from "lucide-react";
 import { shopApi } from "@/utils/api";
 import { useShopStore } from "@/store/shopStore";
 import type { Product } from "@/types";
@@ -120,9 +120,37 @@ export default function ProductDetail() {
               </span>
             )}
             <span className="text-xs text-charcoal-light">已售 {product.sales}</span>
-            <span className="text-xs text-charcoal-light">库存 {product.stock}</span>
+            <span className="text-xs text-charcoal-light">库存 {product.totalWarehouseStock ?? product.stock}</span>
           </div>
         </div>
+
+        {product.expectedWarehouse && (
+          <div className="mt-3 rounded-2xl bg-mint/5 p-4 card-shadow">
+            <div className="flex items-center gap-2 mb-1">
+              <MapPin className="h-4 w-4 text-mint" />
+              <span className="text-sm font-medium text-charcoal">预计发货仓</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Package className="h-3.5 w-3.5 text-mint" />
+              <span className="text-sm text-charcoal-light">{product.expectedWarehouse.name}（{product.expectedWarehouse.city}）</span>
+              <span className="text-xs text-mint">库存 {product.expectedWarehouse.stock} 件</span>
+            </div>
+          </div>
+        )}
+
+        {product.warehouseStock && product.warehouseStock.length > 0 && (
+          <div className="mt-3 rounded-2xl bg-white p-4 card-shadow">
+            <p className="text-sm font-medium text-charcoal mb-2">各仓库存</p>
+            <div className="space-y-1.5">
+              {product.warehouseStock.map((ws) => (
+                <div key={ws.warehouse_name} className="flex items-center justify-between">
+                  <span className="text-xs text-charcoal-light">{ws.warehouse_name}（{ws.warehouse_city}）</span>
+                  <span className={`text-xs font-medium ${ws.stock > 20 ? 'text-green-500' : ws.stock > 5 ? 'text-amber-500' : 'text-red-500'}`}>{ws.stock} 件</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {specs.length > 0 && (
           <div className="mt-3 rounded-2xl bg-white p-4 card-shadow">

@@ -4,6 +4,92 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
+const CITY_COORDS: Record<string, [number, number]> = {
+  '北京': [39.90, 116.40], '上海': [31.23, 121.47], '广州': [23.13, 113.26],
+  '深圳': [22.54, 114.06], '杭州': [30.27, 120.15], '武汉': [30.59, 114.31],
+  '苏州': [31.30, 120.62], '成都': [30.57, 104.07], '南京': [32.06, 118.80],
+  '重庆': [29.56, 106.55], '天津': [39.08, 117.20], '西安': [34.26, 108.94],
+  '长沙': [28.23, 112.94], '郑州': [34.75, 113.65], '济南': [36.65, 116.98],
+  '福州': [26.07, 119.30], '合肥': [31.82, 117.23], '昆明': [25.04, 102.68],
+  '南昌': [28.68, 115.86], '南宁': [22.82, 108.37],
+}
+
+const CITY_PATTERNS: [string, RegExp][] = [
+  ['北京', /北京/], ['上海', /上海/], ['广州', /广州/], ['深圳', /深圳/],
+  ['杭州', /杭州/], ['武汉', /武汉/], ['苏州', /苏州/], ['成都', /成都/],
+  ['南京', /南京/], ['重庆', /重庆/], ['天津', /天津/], ['西安', /西安/],
+  ['长沙', /长沙/], ['郑州', /郑州/], ['济南', /济南/], ['福州', /福州/],
+  ['合肥', /合肥/], ['昆明', /昆明/], ['南昌', /南昌/], ['南宁', /南宁/],
+]
+
+function extractCityFromAddress(address: string): string | null {
+  for (const [city, pattern] of CITY_PATTERNS) {
+    if (pattern.test(address)) return city
+  }
+  return null
+}
+
+function getWarehousesByDistance(city: string) {
+  const coords = CITY_COORDS[city]
+  if (!coords) return []
+  const [cLat, cLng] = coords
+  const warehouses = query('SELECT * FROM warehouses')
+  return warehouses
+    .map((w: any) => ({
+      ...w,
+      distance: Math.sqrt((cLat - w.lat) ** 2 + (cLng - w.lng) ** 2),
+    }))
+    .sort((a: any, b: any) => a.distance - b.distance)
+}
+
+function checkWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]): { canFulfill: boolean; details: { productId: number; needed: number; available: number }[] } {
+  const details = productIds.map((pid, i) => {
+    const inv = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [warehouseId, pid])
+    const available = inv.length > 0 ? inv[0].stock : 0
+    return { productId: pid, needed: quantities[i], available }
+  })
+  return { canFulfill: details.every(d => d.available >= d.needed), details }
+}
+
+function allocateWarehouse(city: string, productIds: number[], quantities: number[]): { warehouseId: number; warehouseName: string; city: string } | null {
+  const sorted = getWarehousesByDistance(city)
+  for (const wh of sorted) {
+    const check = checkWarehouseStock(wh.id, productIds, quantities)
+    if (check.canFulfill) {
+      return { warehouseId: wh.id, warehouseName: wh.name, city: wh.city }
+    }
+    for (const d of check.details) {
+      if (d.available < d.needed) {
+        run('INSERT INTO stockout_logs (warehouse_id, product_id, requested, available) VALUES (?, ?, ?, ?)', [wh.id, d.productId, d.needed, d.available])
+      }
+    }
+  }
+  if (sorted.length > 0) {
+    return { warehouseId: sorted[0].id, warehouseName: sorted[0].name, city: sorted[0].city }
+  }
+  return null
+}
+
+function deductWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]) {
+  for (let i = 0; i < productIds.length; i++) {
+    const existing = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [warehouseId, productIds[i]])
+    if (existing.length > 0) {
+      run('UPDATE warehouse_inventory SET stock = stock - ? WHERE warehouse_id = ? AND product_id = ?', [quantities[i], warehouseId, productIds[i]])
+    }
+  }
+}
+
+function rollbackWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]) {
+  for (let i = 0; i < productIds.length; i++) {
+    const existing = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [warehouseId, productIds[i]])
+    if (existing.length > 0) {
+      run('UPDATE warehouse_inventory SET stock = stock + ? WHERE warehouse_id = ? AND product_id = ?', [quantities[i], warehouseId, productIds[i]])
+    } else {
+      run('INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) VALUES (?, ?, ?)', [warehouseId, productIds[i], quantities[i]])
+    }
+  }
+}
+
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { address, city, payment_method, items } = req.body
@@ -11,8 +97,20 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       res.status(400).json({ success: false, error: '地址和商品不能为空' })
       return
     }
+    let resolvedCity = city
+    if (!resolvedCity) {
+      resolvedCity = extractCityFromAddress(address)
+    }
+    if (!resolvedCity) {
+      res.status(400).json({ success: false, error: '无法识别收货城市，请填写城市信息' })
+      return
+    }
+
     let total = 0
     const orderItems: any[] = []
+    const productIds: number[] = []
+    const quantities: number[] = []
+
     for (const item of items) {
       const products = query('SELECT * FROM products WHERE id = ?', [item.product_id])
       if (products.length === 0) continue
@@ -20,43 +118,45 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       const price = product.price
       total += price * item.quantity
       orderItems.push({ product_id: item.product_id, quantity: item.quantity, price, spec: item.spec || null })
+      productIds.push(item.product_id)
+      quantities.push(item.quantity)
     }
-    const cityCoords: Record<string, [number, number]> = {
-      '北京': [39.90, 116.40], '上海': [31.23, 121.47], '广州': [23.13, 113.26],
-      '深圳': [22.54, 114.06], '杭州': [30.27, 120.15], '武汉': [30.59, 114.31],
-      '苏州': [31.30, 120.62], '成都': [30.57, 104.07], '南京': [32.06, 118.80],
-      '重庆': [29.56, 106.55],
+
+    if (orderItems.length === 0) {
+      res.status(400).json({ success: false, error: '无有效商品' })
+      return
     }
-    let warehouseName: string | null = null
-    if (city && cityCoords[city]) {
-      const [cLat, cLng] = cityCoords[city]
-      const warehouses = query('SELECT * FROM warehouses')
-      let minDist = Infinity
-      for (const w of warehouses) {
-        const dist = Math.sqrt((cLat - w.lat) ** 2 + (cLng - w.lng) ** 2)
-        if (dist < minDist) {
-          minDist = dist
-          warehouseName = w.name
-        }
-      }
+
+    const allocation = allocateWarehouse(resolvedCity, productIds, quantities)
+    const warehouseName = allocation ? allocation.warehouseName : '默认仓'
+    const warehouseId = allocation ? allocation.warehouseId : null
+
+    if (warehouseId) {
+      deductWarehouseStock(warehouseId, productIds, quantities)
     }
-    if (!warehouseName) {
-      const firstProduct = query('SELECT * FROM products WHERE id = ?', [items[0].product_id])
-      warehouseName = firstProduct.length > 0 ? firstProduct[0].warehouse_city + '仓' : null
-    }
-    run('INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)', [req.user!.id, total, 'pending', address, city || null, warehouseName, payment_method || 'wechat'])
-    const orderResult = query('SELECT id FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 1', [req.user!.id])
-    const orderId = orderResult[0].id
     for (const oi of orderItems) {
-      run('INSERT INTO order_items (order_id, product_id, quantity, price, spec) VALUES (?, ?, ?, ?, ?)', [orderId, oi.product_id, oi.quantity, oi.price, oi.spec])
       run('UPDATE products SET stock = stock - ?, sales = sales + ? WHERE id = ?', [oi.quantity, oi.quantity, oi.product_id])
     }
-    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [orderId, 'created', `订单已创建，由${warehouseName}发货`, warehouseName || '仓库'])
+
+    run('INSERT INTO orders (user_id, total_amount, status, address, city, warehouse, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)', [req.user!.id, total, 'pending', address, resolvedCity, warehouseName, payment_method || 'wechat'])
+    const orderResult = query('SELECT id FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 1', [req.user!.id])
+    const orderId = orderResult[0].id
+
+    for (const oi of orderItems) {
+      run('INSERT INTO order_items (order_id, product_id, quantity, price, spec) VALUES (?, ?, ?, ?, ?)', [orderId, oi.product_id, oi.quantity, oi.price, oi.spec])
+    }
+
+    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [orderId, 'created', `订单已创建，由${warehouseName}发货`, warehouseName])
+
     for (const item of items) {
       run('DELETE FROM cart_items WHERE user_id = ? AND product_id = ?', [req.user!.id, item.product_id])
     }
+
     const order = query('SELECT * FROM orders WHERE id = ?', [orderId])
-    res.json({ success: true, data: order[0] })
+    const fullOrder: any = order[0]
+    fullOrder.items = query('SELECT oi.*, p.name as product_name, p.image as product_image FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?', [orderId])
+    fullOrder.logistics = query('SELECT * FROM logistics_records WHERE order_id = ? ORDER BY created_at DESC', [orderId])
+    res.json({ success: true, data: fullOrder })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }
@@ -112,6 +212,44 @@ router.get('/:id/logistics', authMiddleware, async (req: AuthRequest, res: Respo
     }
     const logistics = query('SELECT * FROM logistics_records WHERE order_id = ? ORDER BY created_at DESC', [id])
     res.json({ success: true, data: logistics })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.put('/:id/cancel', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+    const orders = query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [id, req.user!.id])
+    if (orders.length === 0) {
+      res.status(404).json({ success: false, error: '订单不存在' })
+      return
+    }
+    const order = orders[0]
+    if (order.status === 'cancelled') {
+      res.status(400).json({ success: false, error: '订单已取消' })
+      return
+    }
+    if (order.status === 'delivered') {
+      res.status(400).json({ success: false, error: '已签收订单不可取消' })
+      return
+    }
+    run("UPDATE orders SET status = 'cancelled' WHERE id = ?", [id])
+
+    const orderItems = query('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id])
+    for (const oi of orderItems) {
+      run('UPDATE products SET stock = stock + ?, sales = sales - ? WHERE id = ?', [oi.quantity, oi.quantity, oi.product_id])
+    }
+
+    const warehouses = query("SELECT id FROM warehouses WHERE name = ?", [order.warehouse])
+    if (warehouses.length > 0) {
+      const productIds = orderItems.map((oi: any) => oi.product_id)
+      const quantities = orderItems.map((oi: any) => oi.quantity)
+      rollbackWarehouseStock(warehouses[0].id, productIds, quantities)
+    }
+
+    run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [id, 'cancelled', '订单已取消，库存已回滚', order.warehouse || '系统'])
+    res.json({ success: true, data: { id: Number(id), status: 'cancelled' } })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }

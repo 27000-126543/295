@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity, MapPin, Warehouse } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { adminApi } from "@/utils/api";
 import type { DashboardData, PredictionData } from "@/types";
 
@@ -12,10 +12,12 @@ const OVERVIEW_CARDS: { key: keyof DashboardData["overview"]; label: string; ico
   { key: "memberGrowth", label: "会员增长", icon: Users, format: (v) => `+${v}` },
   { key: "totalRevenue", label: "总营收", icon: DollarSign, format: (v) => `¥${v.toLocaleString()}` },
   { key: "totalBabies", label: "宝宝总数", icon: Baby, format: (v) => v.toLocaleString() },
-  { key: "totalTickets", label: "课程券", icon: Ticket, format: (v) => v.toLocaleString() },
+  { key: "totalPosts", label: "社区帖子", icon: Activity, format: (v) => v.toLocaleString() },
 ];
 
 const PIE_COLORS = ["#FF6B6B", "#4ECDC4", "#FFB347", "#87CEEB", "#DDA0DD"];
+
+const CITY_OPTIONS = ["上海", "广州", "深圳", "杭州", "武汉", "苏州", "北京", "成都", "南京", "重庆"];
 
 export default function AdminDashboard() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -50,7 +52,7 @@ export default function AdminDashboard() {
     } catch { /* */ }
   };
 
-  const handleFilter = () => loadData();
+  const handleFilter = () => { loadData(); loadPrediction(); };
 
   return (
     <div className="space-y-6">
@@ -68,12 +70,9 @@ export default function AdminDashboard() {
               className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-coral"
             >
               <option value="">全部城市</option>
-              <option value="上海">上海</option>
-              <option value="广州">广州</option>
-              <option value="深圳">深圳</option>
-              <option value="杭州">杭州</option>
-              <option value="武汉">武汉</option>
-              <option value="苏州">苏州</option>
+              {CITY_OPTIONS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
           <div className="flex-1 min-w-[120px]">
@@ -119,6 +118,22 @@ export default function AdminDashboard() {
               );
             })}
           </div>
+
+          {dashboard.trendData && dashboard.trendData.length > 0 && (
+            <div className="rounded-2xl bg-white p-4 card-shadow">
+              <h3 className="text-sm font-semibold text-charcoal mb-4">订单趋势</h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={dashboard.trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="orders" stroke="#FF6B6B" strokeWidth={2} dot={{ r: 4 }} name="订单量" />
+                  <Line type="monotone" dataKey="revenue" stroke="#4ECDC4" strokeWidth={2} dot={{ r: 4 }} name="营收" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl bg-white p-4 card-shadow">
@@ -166,6 +181,82 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {prediction && prediction.cityComparison && prediction.cityComparison.length > 0 && (
+            <div className="rounded-2xl bg-white p-4 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <MapPin className="h-5 w-5 text-coral" />
+                <h3 className="text-sm font-semibold text-charcoal">城市运营对比</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">城市</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">订单量</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">营收</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">客单价</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">平均配送时效</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">缺货次数</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">发货仓</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prediction.cityComparison.map((c) => (
+                      <tr key={c.city} className="border-b border-gray-50">
+                        <td className="py-2.5 text-charcoal">{c.city}</td>
+                        <td className="py-2.5 text-right text-charcoal">{c.orderCount}</td>
+                        <td className="py-2.5 text-right text-charcoal">¥{c.revenue.toLocaleString()}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">¥{c.avgOrderValue}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{c.avgDeliveryDays}天</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{c.stockoutCount}</td>
+                        <td className="py-2.5 text-charcoal-light">{c.warehouses.join(', ') || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {prediction && prediction.warehouseLoad && prediction.warehouseLoad.length > 0 && (
+            <div className="rounded-2xl bg-white p-4 card-shadow">
+              <div className="flex items-center gap-2 mb-4">
+                <Warehouse className="h-5 w-5 text-mint" />
+                <h3 className="text-sm font-semibold text-charcoal">仓库履约分析</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">仓库名</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">所在城市</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">总库存</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">SKU数</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">订单量</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">负载率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prediction.warehouseLoad.map((w) => (
+                      <tr key={w.name} className="border-b border-gray-50">
+                        <td className="py-2.5 text-charcoal">{w.name}</td>
+                        <td className="py-2.5 text-charcoal-light">{w.city}</td>
+                        <td className="py-2.5 text-right text-charcoal">{w.totalStock}</td>
+                        <td className="py-2.5 text-right text-charcoal-light">{w.productCount}</td>
+                        <td className="py-2.5 text-right text-charcoal">{w.orderCount}</td>
+                        <td className="py-2.5 text-right">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${w.loadRate > 0.8 ? 'bg-red-100 text-red-600' : w.loadRate > 0.5 ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
+                            {(w.loadRate * 100).toFixed(0)}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {dashboard.recentOrders.length > 0 && (
             <div className="rounded-2xl bg-white p-4 card-shadow">
               <h3 className="text-sm font-semibold text-charcoal mb-4">近期订单</h3>
@@ -175,6 +266,7 @@ export default function AdminDashboard() {
                     <tr className="border-b border-gray-100">
                       <th className="py-2 text-left text-xs font-medium text-charcoal-light">订单号</th>
                       <th className="py-2 text-right text-xs font-medium text-charcoal-light">金额</th>
+                      <th className="py-2 text-left text-xs font-medium text-charcoal-light">发货仓</th>
                       <th className="py-2 text-right text-xs font-medium text-charcoal-light">状态</th>
                     </tr>
                   </thead>
@@ -183,6 +275,7 @@ export default function AdminDashboard() {
                       <tr key={order.id} className="border-b border-gray-50">
                         <td className="py-2.5 text-charcoal">#{order.id}</td>
                         <td className="py-2.5 text-right text-charcoal">¥{order.total_amount.toLocaleString()}</td>
+                        <td className="py-2.5 text-charcoal-light">{order.warehouse || '-'}</td>
                         <td className="py-2.5 text-right text-charcoal-light">{order.status}</td>
                       </tr>
                     ))}
@@ -196,13 +289,24 @@ export default function AdminDashboard() {
             <div className="rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 p-4 card-shadow">
               <div className="flex items-center gap-2 mb-3">
                 <Package className="h-5 w-5 text-amber-500" />
-                <h3 className="text-sm font-semibold text-charcoal">推荐备货</h3>
+                <h3 className="text-sm font-semibold text-charcoal">推荐备货（仓库维度）</h3>
               </div>
               <div className="space-y-2">
                 {prediction.recommendedStock.slice(0, 5).map((item) => (
-                  <div key={item.name} className="flex items-center justify-between text-sm">
-                    <span className="text-charcoal-light">{item.name}</span>
-                    <span className="font-bold text-coral">建议 {item.recommended} 件</span>
+                  <div key={item.name} className="rounded-xl bg-white p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-charcoal-light">{item.name}</span>
+                      <span className="font-bold text-coral text-sm">建议 {item.recommended} 件</span>
+                    </div>
+                    {item.warehouseStock && item.warehouseStock.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-2">
+                        {item.warehouseStock.map((ws) => (
+                          <span key={ws.name} className="rounded-full bg-cream px-2 py-0.5 text-[10px] text-charcoal-light">
+                            {ws.name}({ws.city}): {ws.stock}件
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

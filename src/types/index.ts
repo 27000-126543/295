@@ -64,6 +64,9 @@ export interface Product {
   sales: number;
   warehouse_city?: string;
   created_at: string;
+  warehouseStock?: { stock: number; warehouse_name: string; warehouse_city: string }[];
+  totalWarehouseStock?: number;
+  expectedWarehouse?: { name: string; city: string; stock: number } | null;
 }
 
 export interface CartItem {
@@ -271,14 +274,17 @@ export interface DashboardData {
   recentOrders: Order[];
   categorySales: { category: string; revenue: number; quantity: number }[];
   courseBookings: { name: string; category: string; total_booked: number }[];
+  trendData: { month: string; revenue: number; orders: number }[];
 }
 
 export interface PredictionData {
   revenuePredictions: { category: string; current_revenue: number; predicted_revenue: number; growth_rate: number; confidence: number }[];
   ageDistribution: { age_group: string; count: number }[];
-  recommendedStock: { name: string; category: string; stock: number; sales: number; stock_status: string; recommended: number }[];
+  recommendedStock: { name: string; category: string; stock: number; sales: number; stock_status: string; recommended: number; warehouseStock: { name: string; city: string; stock: number }[] }[];
   coursePredictions: { name: string; category: string; currentBookings: number; predictedBookings: number; suggestion: string }[];
   holidayImpact: { name: string; impactType: string; description: string; affectedCategories: string[] }[];
+  cityComparison: { city: string; orderCount: number; revenue: number; avgOrderValue: number; avgDeliveryDays: number; stockoutCount: number; warehouses: string[] }[];
+  warehouseLoad: { name: string; city: string; totalStock: number; productCount: number; orderCount: number; loadRate: number }[];
 }
 
 export interface ReportData {
@@ -288,4 +294,6 @@ export interface ReportData {
   topProducts: { name: string; category: string; total_sold: number; revenue: number }[];
   courseStats: { name: string; category: string; total_booked: number; total_capacity: number; completionRate: number }[];
   monthlyTrend: { month: string; revenue: number; orders: number; users: number }[];
+  cityReport: { city: string; orderCount: number; revenue: number; avgDeliveryDays: number; stockoutCount: number }[];
+  warehouseReport: { name: string; city: string; totalStock: number; productCount: number; orderCount: number }[];
 }

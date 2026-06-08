@@ -32,6 +32,8 @@ export async function initDb() {
     CREATE TABLE member_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER UNIQUE NOT NULL, level TEXT DEFAULT 'normal', annual_spending REAL DEFAULT 0, activity_score INTEGER DEFAULT 0, points INTEGER DEFAULT 0, updated_at TEXT DEFAULT (datetime('now')));
     CREATE TABLE coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, type TEXT NOT NULL, value REAL NOT NULL, min_spend REAL DEFAULT 0, status TEXT DEFAULT 'available', expires_at TEXT, created_at TEXT DEFAULT (datetime('now')));
     CREATE TABLE warehouses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL);
+    CREATE TABLE warehouse_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL, product_id INTEGER NOT NULL, stock INTEGER DEFAULT 0, UNIQUE(warehouse_id, product_id));
+    CREATE TABLE stockout_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL, product_id INTEGER NOT NULL, requested INTEGER NOT NULL, available INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')));
   `)
 
   const imgBase = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt='
@@ -129,6 +131,24 @@ export async function initDb() {
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东2仓', '杭州', 30.27, 120.15)`)
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华南2仓', '深圳', 22.54, 114.06)`)
   db.run(`INSERT INTO warehouses (name, city, lat, lng) VALUES ('华东3仓', '苏州', 31.30, 120.62)`)
+
+  const warehouseInventory: [number, number, number][] = [
+    [1, 1, 60], [1, 2, 50], [1, 3, 40], [1, 7, 100], [1, 8, 90], [1, 9, 80], [1, 10, 70],
+    [1, 15, 50], [1, 16, 70], [1, 17, 60],
+    [2, 6, 15], [2, 18, 50], [2, 19, 60], [2, 20, 35],
+    [2, 1, 40], [2, 7, 80], [2, 15, 50],
+    [3, 15, 60], [3, 16, 90], [3, 17, 70],
+    [3, 1, 30], [3, 2, 40], [3, 7, 60],
+    [4, 4, 30], [4, 5, 20], [4, 21, 60], [4, 22, 30],
+    [4, 1, 20], [4, 15, 30],
+    [5, 11, 50], [5, 12, 70], [5, 13, 100], [5, 14, 80],
+    [5, 1, 20], [5, 7, 50],
+    [6, 7, 120], [6, 8, 110], [6, 9, 100], [6, 10, 90],
+    [6, 1, 30], [6, 15, 40],
+  ]
+  for (const [wid, pid, stock] of warehouseInventory) {
+    db.run(`INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) VALUES (?, ?, ?)`, [wid, pid, stock])
+  }
 
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (2, 1, 2, '1段')`)
   db.run(`INSERT INTO cart_items (user_id, product_id, quantity, spec) VALUES (2, 7, 3, 'NB号')`)

@@ -7,6 +7,8 @@ import {
   CheckCircle,
   Clock,
   CircleDot,
+  AlertTriangle,
+  Warehouse,
 } from "lucide-react";
 import { useShopStore } from "@/store/shopStore";
 import PageHeader from "@/components/PageHeader";
@@ -18,6 +20,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: React.Rea
   shipped: { label: "运输中", color: "bg-mint/15 text-mint-dark", icon: <Truck className="h-5 w-5" /> },
   delivered: { label: "已完成", color: "bg-green-100 text-green-700", icon: <CheckCircle className="h-5 w-5" /> },
   cancelled: { label: "已取消", color: "bg-gray-100 text-gray-500", icon: <Package className="h-5 w-5" /> },
+  delivery_failed: { label: "发货失败", color: "bg-red-100 text-red-600", icon: <AlertTriangle className="h-5 w-5" /> },
 };
 
 function LogisticsTimeline({ records }: { records: LogisticsRecord[] }) {
@@ -129,6 +132,12 @@ export default function OrderDetail() {
               )}
             </div>
           </div>
+          {order.warehouse && (
+            <div className="mt-2 flex items-center gap-2 border-t border-gray-50 pt-2">
+              <Warehouse className="h-4 w-4 text-mint" />
+              <span className="text-xs text-charcoal-light">发货仓：{order.warehouse}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 rounded-2xl bg-white p-4 card-shadow">

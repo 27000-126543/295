@@ -1,5 +1,5 @@
 import { Router, type Response } from 'express'
-import { query } from '../db.js'
+import { query, run } from '../db.js'
 import { authMiddleware, adminMiddleware, type AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
@@ -133,7 +133,7 @@ router.get('/dashboard', authMiddleware, adminMiddleware, async (req: AuthReques
     const recentWhere = buildWhere('WHERE 1=1', city, startDate, endDate, 'o')
     const recentOrders = query(`SELECT o.*, u.name as user_name FROM orders o JOIN users u ON o.user_id = u.id ${recentWhere.sql} ORDER BY o.created_at DESC LIMIT 5`, recentWhere.params)
 
-    let trendMonths: string[] = []
+    let trendData: { month: string; revenue: number; orders: number }[] = []
     if (startDate && endDate) {
       const start = new Date(startDate)
       const end = new Date(endDate)
@@ -142,26 +142,42 @@ router.get('/dashboard', authMiddleware, adminMiddleware, async (req: AuthReques
       const ey = end.getFullYear()
       const em = end.getMonth()
       let y = sy, m = sm
+      const trendMonths: string[] = []
       while (y < ey || (y === ey && m <= em)) {
         trendMonths.push(`${y}-${String(m + 1).padStart(2, '0')}`)
         m++
         if (m > 11) { m = 0; y++ }
       }
+      const trendParams: any[] = []
+      let trendWhere = 'WHERE 1=1'
+      if (city) { trendWhere += ' AND city = ?'; trendParams.push(city) }
+      trendData = trendMonths.map(mth => {
+        const tp = [...trendParams, `${mth}%`]
+        const ord = query(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders ${trendWhere} AND created_at LIKE ?`, tp)
+        return { month: mth, revenue: ord[0].total, orders: ord[0].count }
+      })
     } else {
       const now = new Date()
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        trendMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+        const mth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        let sql = 'SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders WHERE created_at LIKE ?'
+        const params: any[] = [`${mth}%`]
+        if (city) { sql += ' AND city = ?'; params.push(city) }
+        const ord = query(sql, params)
+        trendData.push({ month: mth, revenue: ord[0].total, orders: ord[0].count })
       }
     }
-    const trendParams: any[] = []
-    let trendWhere = 'WHERE 1=1'
-    if (city) { trendWhere += ' AND city = ?'; trendParams.push(city) }
-    const trendData = trendMonths.map(m => {
-      const tp = [...trendParams, `${m}%`]
-      const ord = query(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders ${trendWhere} AND created_at LIKE ?`, tp)
-      return { month: m, revenue: ord[0].total, orders: ord[0].count }
-    })
+
+    const asWhere = buildWhere('WHERE 1=1', city, startDate, endDate, 'o')
+    const afterSalesStats = query(`SELECT COUNT(*) as totalAS, COALESCE(SUM(CASE WHEN as2.type IN ('refund','return_refund') THEN as2.refund_amount ELSE 0 END), 0) as totalRefund, COALESCE(SUM(CASE WHEN as2.type IN ('return_refund','exchange') THEN as2.quantity ELSE 0 END), 0) as totalReturnQty FROM after_sales as2 JOIN orders o ON as2.order_id = o.id ${asWhere.sql}`, asWhere.params)
+    const asCount = afterSalesStats[0].totalAS || 0
+    const asRefund = afterSalesStats[0].totalRefund || 0
+    const asReturnQty = afterSalesStats[0].totalReturnQty || 0
+    const asRate = totalOrders > 0 ? Math.round(asCount / totalOrders * 10000) / 100 : 0
+
+    const asListWhere = buildWhere('WHERE 1=1', city, startDate, endDate, 'o')
+    const afterSalesList = query(`SELECT as2.*, o.city, o.warehouse, p.name as product_name, p.category as product_category, u.name as user_name FROM after_sales as2 JOIN orders o ON as2.order_id = o.id JOIN products p ON as2.product_id = p.id JOIN users u ON as2.user_id = u.id ${asListWhere.sql} ORDER BY as2.created_at DESC LIMIT 20`, asListWhere.params)
 
     res.json({
       success: true,
@@ -180,8 +196,156 @@ router.get('/dashboard', authMiddleware, adminMiddleware, async (req: AuthReques
         categorySales,
         courseBookings,
         trendData,
+        afterSales: {
+          totalAS: asCount,
+          totalRefund: asRefund,
+          totalReturnQty: asReturnQty,
+          afterSalesRate: asRate,
+          list: afterSalesList,
+        },
       }
     })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.get('/after-sales', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { status, city, startDate, endDate } = req.query as { status?: string; city?: string; startDate?: string; endDate?: string }
+    let sql = 'SELECT as2.*, o.city, o.warehouse, p.name as product_name, p.category as product_category, u.name as user_name FROM after_sales as2 JOIN orders o ON as2.order_id = o.id JOIN products p ON as2.product_id = p.id JOIN users u ON as2.user_id = u.id WHERE 1=1'
+    const params: any[] = []
+    if (status) { sql += ' AND as2.status = ?'; params.push(status) }
+    if (city) { sql += ' AND o.city = ?'; params.push(city) }
+    if (startDate && endDate) { sql += ' AND as2.created_at >= ? AND as2.created_at <= ?'; params.push(startDate, endDate) }
+    sql += ' ORDER BY as2.created_at DESC'
+    const list = query(sql, params)
+    res.json({ success: true, data: list })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.put('/after-sales/:id/review', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+    const { action, admin_note } = req.body
+    if (!action || !['approve', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, error: '请选择审核操作' })
+      return
+    }
+    const asList = query('SELECT * FROM after_sales WHERE id = ?', [id])
+    if (asList.length === 0) {
+      res.status(404).json({ success: false, error: '售后单不存在' })
+      return
+    }
+    const asRecord = asList[0]
+    if (asRecord.status !== 'pending') {
+      res.status(400).json({ success: false, error: '该售后单已处理，请勿重复操作' })
+      return
+    }
+
+    if (action === 'reject') {
+      run("UPDATE after_sales SET status = 'rejected', admin_note = ?, processed_at = datetime('now') WHERE id = ?", [admin_note || '', id])
+      res.json({ success: true, data: { id: Number(id), status: 'rejected' } })
+      return
+    }
+
+    const order = query('SELECT * FROM orders WHERE id = ?', [asRecord.order_id])
+    if (order.length === 0) {
+      res.status(404).json({ success: false, error: '关联订单不存在' })
+      return
+    }
+    const o = order[0]
+
+    if (asRecord.type === 'refund') {
+      run("UPDATE after_sales SET status = 'approved', admin_note = ?, processed_at = datetime('now') WHERE id = ?", [admin_note || '', id])
+      run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [o.id, 'refund', `退款¥${asRecord.refund_amount}已处理`, o.warehouse || '系统'])
+    } else if (asRecord.type === 'return_refund') {
+      run("UPDATE after_sales SET status = 'approved', admin_note = ?, processed_at = datetime('now') WHERE id = ?", [admin_note || '', id])
+      run('UPDATE products SET stock = stock + ? WHERE id = ?', [asRecord.quantity, asRecord.product_id])
+      const warehouses = query("SELECT id FROM warehouses WHERE name = ?", [o.warehouse])
+      if (warehouses.length > 0) {
+        rollbackWarehouseStock(warehouses[0].id, [asRecord.product_id], [asRecord.quantity])
+      }
+      run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [o.id, 'return_refund', `退货退款：退${asRecord.quantity}件入库至${o.warehouse}，退款¥${asRecord.refund_amount}`, o.warehouse || '系统'])
+    } else if (asRecord.type === 'exchange') {
+      run("UPDATE after_sales SET status = 'approved', admin_note = ?, processed_at = datetime('now') WHERE id = ?", [admin_note || '', id])
+      run('INSERT INTO logistics_records (order_id, status, description, location) VALUES (?, ?, ?, ?)', [o.id, 'exchange', `换货：${asRecord.quantity}件已安排重新发货`, o.warehouse || '系统'])
+    }
+
+    res.json({ success: true, data: { id: Number(id), status: 'approved' } })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+function rollbackWarehouseStock(warehouseId: number, productIds: number[], quantities: number[]) {
+  for (let i = 0; i < productIds.length; i++) {
+    const existing = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [warehouseId, productIds[i]])
+    if (existing.length > 0) {
+      run('UPDATE warehouse_inventory SET stock = stock + ? WHERE warehouse_id = ? AND product_id = ?', [quantities[i], warehouseId, productIds[i]])
+    } else {
+      run('INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) VALUES (?, ?, ?)', [warehouseId, productIds[i], quantities[i]])
+    }
+  }
+}
+
+router.get('/warehouse-inventory', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const inventory = query('SELECT wi.*, w.name as warehouse_name, w.city as warehouse_city, p.name as product_name, p.category, p.sales FROM warehouse_inventory wi JOIN warehouses w ON wi.warehouse_id = w.id JOIN products p ON wi.product_id = p.id ORDER BY p.category, p.name, w.name')
+    const stockoutStats = query('SELECT warehouse_id, product_id, COUNT(*) as stockout_count FROM stockout_logs GROUP BY warehouse_id, product_id')
+    const stockoutMap: Record<string, number> = {}
+    for (const s of stockoutStats) {
+      stockoutMap[`${s.warehouse_id}_${s.product_id}`] = s.stockout_count
+    }
+    const result = inventory.map((inv: any) => ({
+      ...inv,
+      stockoutCount: stockoutMap[`${inv.warehouse_id}_${inv.product_id}`] || 0,
+      safetyStock: Math.max(Math.round(inv.sales / 12), 10),
+      needReplenish: inv.stock < Math.max(Math.round(inv.sales / 12), 10),
+    }))
+    res.json({ success: true, data: result })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.post('/stock-transfer', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { product_id, from_warehouse_id, to_warehouse_id, quantity } = req.body
+    if (!product_id || !from_warehouse_id || !to_warehouse_id || !quantity) {
+      res.status(400).json({ success: false, error: '请填写完整的调拨信息' })
+      return
+    }
+    if (from_warehouse_id === to_warehouse_id) {
+      res.status(400).json({ success: false, error: '源仓库和目标仓库不能相同' })
+      return
+    }
+    const fromInv = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [from_warehouse_id, product_id])
+    if (fromInv.length === 0 || fromInv[0].stock < quantity) {
+      res.status(400).json({ success: false, error: '源仓库库存不足' })
+      return
+    }
+    run('UPDATE warehouse_inventory SET stock = stock - ? WHERE warehouse_id = ? AND product_id = ?', [quantity, from_warehouse_id, product_id])
+    const toInv = query('SELECT stock FROM warehouse_inventory WHERE warehouse_id = ? AND product_id = ?', [to_warehouse_id, product_id])
+    if (toInv.length > 0) {
+      run('UPDATE warehouse_inventory SET stock = stock + ? WHERE warehouse_id = ? AND product_id = ?', [quantity, to_warehouse_id, product_id])
+    } else {
+      run('INSERT INTO warehouse_inventory (warehouse_id, product_id, stock) VALUES (?, ?, ?)', [to_warehouse_id, product_id, quantity])
+    }
+    run('INSERT INTO stock_transfers (product_id, from_warehouse_id, to_warehouse_id, quantity, operator_id) VALUES (?, ?, ?, ?, ?)', [product_id, from_warehouse_id, to_warehouse_id, quantity, req.user!.id])
+    const transfer = query('SELECT st.*, p.name as product_name FROM stock_transfers st JOIN products p ON st.product_id = p.id ORDER BY st.id DESC LIMIT 1')
+    res.json({ success: true, data: transfer[0] })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.get('/stock-transfers', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const transfers = query('SELECT st.*, p.name as product_name, w1.name as from_warehouse_name, w2.name as to_warehouse_name FROM stock_transfers st JOIN products p ON st.product_id = p.id JOIN warehouses w1 ON st.from_warehouse_id = w1.id JOIN warehouses w2 ON st.to_warehouse_id = w2.id ORDER BY st.created_at DESC LIMIT 50')
+    res.json({ success: true, data: transfers })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }
@@ -396,6 +560,8 @@ router.get('/monthly-report', authMiddleware, adminMiddleware, async (req: AuthR
       }
     })
 
+    const afterSalesReport = query("SELECT o.city, o.warehouse, p.category, COUNT(*) as totalAS, COALESCE(SUM(CASE WHEN as2.type IN ('refund','return_refund') THEN as2.refund_amount ELSE 0 END), 0) as totalRefund, COALESCE(SUM(CASE WHEN as2.type IN ('return_refund','exchange') THEN as2.quantity ELSE 0 END), 0) as totalReturnQty FROM after_sales as2 JOIN orders o ON as2.order_id = o.id JOIN products p ON as2.product_id = p.id GROUP BY o.city, o.warehouse, p.category")
+
     res.json({
       success: true,
       data: {
@@ -415,6 +581,7 @@ router.get('/monthly-report', authMiddleware, adminMiddleware, async (req: AuthR
         monthlyTrend,
         cityReport,
         warehouseReport,
+        afterSalesReport,
       }
     })
   } catch (e: any) {

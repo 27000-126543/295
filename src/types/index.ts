@@ -82,11 +82,31 @@ export interface CartItem {
   created_at: string;
 }
 
+export interface AfterSale {
+  id: number;
+  order_id: number;
+  user_id: number;
+  type: "refund" | "return_refund" | "exchange";
+  reason: string;
+  product_id: number;
+  quantity: number;
+  refund_amount: number;
+  status: "pending" | "approved" | "rejected";
+  admin_note?: string;
+  processed_at?: string;
+  created_at: string;
+  product_name?: string;
+  city?: string;
+  warehouse?: string;
+  product_category?: string;
+  user_name?: string;
+}
+
 export interface Order {
   id: number;
   user_id: number;
   total_amount: number;
-  status: "pending" | "paid" | "shipped" | "delivered" | "cancelled";
+  status: "pending" | "paid" | "shipped" | "delivered" | "cancelled" | "delivery_failed";
   address: string;
   city?: string;
   warehouse?: string;
@@ -94,6 +114,7 @@ export interface Order {
   created_at: string;
   items?: OrderItem[];
   logistics?: LogisticsRecord[];
+  afterSales?: AfterSale[];
 }
 
 export interface OrderItem {
@@ -275,6 +296,13 @@ export interface DashboardData {
   categorySales: { category: string; revenue: number; quantity: number }[];
   courseBookings: { name: string; category: string; total_booked: number }[];
   trendData: { month: string; revenue: number; orders: number }[];
+  afterSales: {
+    totalAS: number;
+    totalRefund: number;
+    totalReturnQty: number;
+    afterSalesRate: number;
+    list: AfterSale[];
+  };
 }
 
 export interface PredictionData {
@@ -296,4 +324,34 @@ export interface ReportData {
   monthlyTrend: { month: string; revenue: number; orders: number; users: number }[];
   cityReport: { city: string; orderCount: number; revenue: number; avgDeliveryDays: number; stockoutCount: number }[];
   warehouseReport: { name: string; city: string; totalStock: number; productCount: number; orderCount: number }[];
+  afterSalesReport: { city: string; warehouse: string; category: string; totalAS: number; totalRefund: number; totalReturnQty: number }[];
+}
+
+export interface WarehouseInventoryItem {
+  id: number;
+  warehouse_id: number;
+  product_id: number;
+  stock: number;
+  warehouse_name: string;
+  warehouse_city: string;
+  product_name: string;
+  category: string;
+  sales: number;
+  stockoutCount: number;
+  safetyStock: number;
+  needReplenish: boolean;
+}
+
+export interface StockTransfer {
+  id: number;
+  product_id: number;
+  from_warehouse_id: number;
+  to_warehouse_id: number;
+  quantity: number;
+  status: string;
+  operator_id: number;
+  created_at: string;
+  product_name?: string;
+  from_warehouse_name?: string;
+  to_warehouse_name?: string;
 }

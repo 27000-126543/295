@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Package, Truck, CheckCircle, Clock, CreditCard } from "lucide-react";
+import { Package, Truck, CheckCircle, Clock, CreditCard, AlertTriangle } from "lucide-react";
 import { useShopStore } from "@/store/shopStore";
 import type { Order } from "@/types";
 import PageHeader from "@/components/PageHeader";
@@ -19,6 +19,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   shipped: { label: "待收货", color: "bg-mint/15 text-mint-dark", icon: <Truck className="h-3.5 w-3.5" /> },
   delivered: { label: "已完成", color: "bg-green-100 text-green-700", icon: <CheckCircle className="h-3.5 w-3.5" /> },
   cancelled: { label: "已取消", color: "bg-gray-100 text-gray-500", icon: <Package className="h-3.5 w-3.5" /> },
+  delivery_failed: { label: "发货失败", color: "bg-red-100 text-red-600", icon: <AlertTriangle className="h-3.5 w-3.5" /> },
 };
 
 export default function OrderList() {

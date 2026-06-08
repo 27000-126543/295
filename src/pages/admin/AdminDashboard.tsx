@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity, MapPin, Warehouse, AlertTriangle } from "lucide-react";
+import { ShoppingCart, BookOpen, Users, Baby, TrendingUp, CalendarDays, Package, DollarSign, Ticket, Clock, Activity, MapPin, Warehouse, AlertTriangle, RotateCcw } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { adminApi } from "@/utils/api";
 import type { DashboardData, PredictionData } from "@/types";
@@ -59,6 +59,15 @@ export default function AdminDashboard() {
       await adminApi.markDeliveryFailed(orderId);
       loadData();
       loadPrediction();
+    } catch (e: any) {
+      alert(e.message || '操作失败');
+    }
+  };
+
+  const handleReviewAfterSale = async (id: number, action: "approve" | "reject") => {
+    try {
+      await adminApi.reviewAfterSale(id, { action });
+      loadData();
     } catch (e: any) {
       alert(e.message || '操作失败');
     }
@@ -283,6 +292,7 @@ export default function AdminDashboard() {
                       <th className="py-2 text-right text-xs font-medium text-charcoal-light">金额</th>
                       <th className="py-2 text-left text-xs font-medium text-charcoal-light">发货仓</th>
                       <th className="py-2 text-right text-xs font-medium text-charcoal-light">状态</th>
+                      <th className="py-2 text-right text-xs font-medium text-charcoal-light">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -291,7 +301,28 @@ export default function AdminDashboard() {
                         <td className="py-2.5 text-charcoal">#{order.id}</td>
                         <td className="py-2.5 text-right text-charcoal">¥{order.total_amount.toLocaleString()}</td>
                         <td className="py-2.5 text-charcoal-light">{order.warehouse || '-'}</td>
-                        <td className="py-2.5 text-right text-charcoal-light">{order.status}</td>
+                        <td className="py-2.5 text-right">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            order.status === 'delivery_failed' ? 'bg-red-100 text-red-600' :
+                            order.status === 'delivered' ? 'bg-green-100 text-green-600' :
+                            order.status === 'shipped' ? 'bg-blue-100 text-blue-600' :
+                            order.status === 'cancelled' ? 'bg-gray-100 text-gray-600' :
+                            'bg-amber-100 text-amber-600'
+                          }`}>
+                            {statusLabel[order.status] || order.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right">
+                          {(order.status === 'pending' || order.status === 'paid' || order.status === 'shipped') && (
+                            <button
+                              onClick={() => handleDeliveryFailed(order.id)}
+                              className="flex items-center gap-1 ml-auto rounded-lg bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100 transition-colors"
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              发货失败
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -108,25 +108,36 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
       return
     }
 
-    let total = 0
-    const orderItems: any[] = []
-    const productIds: number[] = []
-    const quantities: number[] = []
-
+    const mergedMap = new Map<number, { quantity: number; price: number; spec: string | null; product_name: string }>()
     for (const item of items) {
       const products = query('SELECT * FROM products WHERE id = ?', [item.product_id])
       if (products.length === 0) continue
       const product = products[0]
-      const price = product.price
-      total += price * item.quantity
-      orderItems.push({ product_id: item.product_id, quantity: item.quantity, price, spec: item.spec || null, product_name: product.name })
-      productIds.push(item.product_id)
-      quantities.push(item.quantity)
+      const existing = mergedMap.get(item.product_id)
+      if (existing) {
+        existing.quantity += item.quantity
+      } else {
+        mergedMap.set(item.product_id, {
+          quantity: item.quantity,
+          price: product.price,
+          spec: item.spec || null,
+          product_name: product.name,
+        })
+      }
     }
 
-    if (orderItems.length === 0) {
+    if (mergedMap.size === 0) {
       res.status(400).json({ success: false, error: '无有效商品' })
       return
+    }
+
+    const productIds = Array.from(mergedMap.keys())
+    const quantities = Array.from(mergedMap.values()).map(v => v.quantity)
+    let total = 0
+    const orderItems: any[] = []
+    for (const [pid, info] of mergedMap) {
+      total += info.price * info.quantity
+      orderItems.push({ product_id: pid, quantity: info.quantity, price: info.price, spec: info.spec, product_name: info.product_name })
     }
 
     const outOfStockItems: string[] = []
@@ -175,6 +186,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response): Promis
     fullOrder.logistics = query('SELECT * FROM logistics_records WHERE order_id = ? ORDER BY created_at DESC', [orderId])
     res.json({ success: true, data: fullOrder })
   } catch (e: any) {
+    console.error('Order error:', e)
     res.status(500).json({ success: false, error: e.message })
   }
 })
@@ -213,6 +225,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response): Prom
     const order = orders[0]
     order.items = query('SELECT oi.*, p.name as product_name, p.image as product_image FROM order_items oi JOIN products p ON oi.product_id = p.id WHERE oi.order_id = ?', [id])
     order.logistics = query('SELECT * FROM logistics_records WHERE order_id = ? ORDER BY created_at DESC', [id])
+    order.afterSales = query('SELECT as2.*, p.name as product_name FROM after_sales as2 JOIN products p ON as2.product_id = p.id WHERE as2.order_id = ?', [id])
     res.json({ success: true, data: order })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
@@ -229,6 +242,51 @@ router.get('/:id/logistics', authMiddleware, async (req: AuthRequest, res: Respo
     }
     const logistics = query('SELECT * FROM logistics_records WHERE order_id = ? ORDER BY created_at DESC', [id])
     res.json({ success: true, data: logistics })
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.post('/:id/after-sale', authMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+    const { type, reason, product_id, quantity } = req.body
+    if (!type || !product_id || !quantity) {
+      res.status(400).json({ success: false, error: '请填写完整的售后信息' })
+      return
+    }
+    if (!['refund', 'return_refund', 'exchange'].includes(type)) {
+      res.status(400).json({ success: false, error: '无效的售后类型' })
+      return
+    }
+    const orders = query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [id, req.user!.id])
+    if (orders.length === 0) {
+      res.status(404).json({ success: false, error: '订单不存在' })
+      return
+    }
+    const order = orders[0]
+    if (!['shipped', 'delivered'].includes(order.status)) {
+      res.status(400).json({ success: false, error: '仅已发货或已签收订单可申请售后' })
+      return
+    }
+    const existing = query('SELECT * FROM after_sales WHERE order_id = ? AND product_id = ? AND status = ?', [id, product_id, 'pending'])
+    if (existing.length > 0) {
+      res.status(400).json({ success: false, error: '该商品已有待处理的售后申请' })
+      return
+    }
+    const orderItem = query('SELECT * FROM order_items WHERE order_id = ? AND product_id = ?', [id, product_id])
+    if (orderItem.length === 0) {
+      res.status(400).json({ success: false, error: '该商品不在本订单中' })
+      return
+    }
+    if (quantity > orderItem[0].quantity) {
+      res.status(400).json({ success: false, error: '售后数量不能超过购买数量' })
+      return
+    }
+    const refund_amount = type === 'exchange' ? 0 : orderItem[0].price * quantity
+    run('INSERT INTO after_sales (order_id, user_id, type, reason, product_id, quantity, refund_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [id, req.user!.id, type, reason || '', product_id, quantity, refund_amount, 'pending'])
+    const asResult = query('SELECT * FROM after_sales WHERE order_id = ? ORDER BY id DESC LIMIT 1', [id])
+    res.json({ success: true, data: asResult[0] })
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message })
   }
@@ -276,7 +334,7 @@ router.put('/:id/cancel', authMiddleware, async (req: AuthRequest, res: Response
   }
 })
 
-router.put('/:id/delivery-failed', adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
+router.put('/:id/delivery-failed', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params
     const orders = query('SELECT * FROM orders WHERE id = ?', [id])

@@ -21,6 +21,9 @@ import type {
   DashboardData,
   PredictionData,
   ReportData,
+  AfterSale,
+  WarehouseInventoryItem,
+  StockTransfer,
 } from "@/types";
 
 function getToken(): string | null {
@@ -196,4 +199,24 @@ export const adminApi = {
   },
   markDeliveryFailed: (orderId: number) =>
     request<{ id: number; status: string }>(`/api/orders/${orderId}/delivery-failed`, { method: "PUT" }),
+  afterSales: (params?: { status?: string; city?: string; startDate?: string; endDate?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.city) q.set("city", params.city);
+    if (params?.startDate) q.set("startDate", params.startDate);
+    if (params?.endDate) q.set("endDate", params.endDate);
+    const qs = q.toString();
+    return request<AfterSale[]>(`/api/admin/after-sales${qs ? `?${qs}` : ""}`);
+  },
+  reviewAfterSale: (id: number, data: { action: "approve" | "reject"; admin_note?: string }) =>
+    request<{ id: number; status: string }>(`/api/admin/after-sales/${id}/review`, { method: "PUT", body: JSON.stringify(data) }),
+  warehouseInventory: () => request<WarehouseInventoryItem[]>("/api/admin/warehouse-inventory"),
+  stockTransfer: (data: { product_id: number; from_warehouse_id: number; to_warehouse_id: number; quantity: number }) =>
+    request<StockTransfer>("/api/admin/stock-transfer", { method: "POST", body: JSON.stringify(data) }),
+  stockTransfers: () => request<StockTransfer[]>("/api/admin/stock-transfers"),
+};
+
+export const afterSaleApi = {
+  create: (orderId: number, data: { type: string; reason: string; product_id: number; quantity: number }) =>
+    request<AfterSale>(`/api/orders/${orderId}/after-sale`, { method: "POST", body: JSON.stringify(data) }),
 };

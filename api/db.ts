@@ -34,6 +34,8 @@ export async function initDb() {
     CREATE TABLE warehouses (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, city TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL);
     CREATE TABLE warehouse_inventory (id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL, product_id INTEGER NOT NULL, stock INTEGER DEFAULT 0, UNIQUE(warehouse_id, product_id));
     CREATE TABLE stockout_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, warehouse_id INTEGER NOT NULL, product_id INTEGER NOT NULL, requested INTEGER NOT NULL, available INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE after_sales (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, user_id INTEGER NOT NULL, type TEXT NOT NULL, reason TEXT, product_id INTEGER NOT NULL, quantity INTEGER NOT NULL, refund_amount REAL DEFAULT 0, status TEXT DEFAULT 'pending', admin_note TEXT, processed_at TEXT, created_at TEXT DEFAULT (datetime('now')));
+    CREATE TABLE stock_transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL, from_warehouse_id INTEGER NOT NULL, to_warehouse_id INTEGER NOT NULL, quantity INTEGER NOT NULL, status TEXT DEFAULT 'completed', operator_id INTEGER, created_at TEXT DEFAULT (datetime('now')));
   `)
 
   const imgBase = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt='
@@ -62,28 +64,28 @@ export async function initDb() {
   db.run(`INSERT INTO vaccine_records (baby_id, vaccine_name, status) VALUES (3, '百白破疫苗', 'pending')`)
 
   const products = [
-    ["贝贝金装婴儿配方奶粉1段", "奶粉", 268, 328, `${imgBase}baby%20formula%20milk%20powder%20tin%20stage1${imgSize}`, "0-6个月婴儿专用配方奶粉，富含DHA+ARA，接近母乳配方", 0, 6, 200, 1580, "上海"],
-    ["贝贝金装婴儿配方奶粉2段", "奶粉", 248, 298, `${imgBase}baby%20formula%20milk%20powder%20tin%20stage2${imgSize}`, "6-12个月较大婴儿配方奶粉，添加益生元组合", 6, 12, 180, 1320, "上海"],
-    ["贝贝金装幼儿配方奶粉3段", "奶粉", 228, 268, `${imgBase}toddler%20formula%20milk%20powder%20tin%20stage3${imgSize}`, "12-36个月幼儿配方奶粉，助力宝宝成长发育", 12, 36, 160, 980, "上海"],
-    ["贝贝有机奶粉1段", "奶粉", 358, 428, `${imgBase}organic%20baby%20formula%20milk%20powder${imgSize}`, "有机认证配方奶粉，纯净天然，0添加", 0, 6, 80, 560, "杭州"],
-    ["贝贝羊奶粉2段", "奶粉", 328, 388, `${imgBase}goat%20milk%20baby%20formula%20powder${imgSize}`, "山羊奶配方，分子小易吸收，适合牛奶蛋白过敏宝宝", 6, 12, 60, 420, "杭州"],
-    ["贝贝特殊配方奶粉", "奶粉", 398, 458, `${imgBase}special%20baby%20formula%20milk%20powder${imgSize}`, "特殊医学用途配方奶粉，深度水解蛋白", 0, 12, 30, 210, "广州"],
-    ["贝贝超薄透气纸尿裤NB号", "尿布", 89, 119, `${imgBase}baby%20diapers%20newborn%20pack${imgSize}`, "新生儿专用，0-5kg，超薄透气0.1cm", 0, 1, 500, 3200, "苏州"],
-    ["贝贝超薄透气纸尿裤S号", "尿布", 99, 129, `${imgBase}baby%20diapers%20small%20pack${imgSize}`, "小号纸尿裤，5-8kg，12小时干爽", 1, 3, 450, 2800, "苏州"],
-    ["贝贝超薄透气纸尿裤M号", "尿布", 109, 139, `${imgBase}baby%20diapers%20medium%20pack${imgSize}`, "中号纸尿裤，6-11kg，弹性腰围", 3, 8, 400, 2500, "苏州"],
-    ["贝贝超薄透气纸尿裤L号", "尿布", 119, 149, `${imgBase}baby%20diapers%20large%20pack${imgSize}`, "大号纸尿裤，9-14kg，防漏立体护围", 8, 15, 350, 2100, "苏州"],
-    ["贝贝益智积木套装", "玩具", 158, 198, `${imgBase}baby%20educational%20building%20blocks%20toy${imgSize}`, "大颗粒积木80块，防吞咽设计，锻炼手眼协调", 12, 36, 150, 890, "深圳"],
-    ["贝贝音乐手机玩具", "玩具", 68, 98, `${imgBase}baby%20music%20phone%20toy${imgSize}`, "模拟手机造型，中英文双语，多种音效互动", 0, 24, 200, 1560, "深圳"],
-    ["贝贝早教认知卡片", "玩具", 48, 68, `${imgBase}baby%20educational%20flash%20cards${imgSize}`, "108张双面认知卡，涵盖动物水果交通工具", 0, 36, 300, 2100, "深圳"],
-    ["贝贝软胶摇铃套装", "玩具", 78, 108, `${imgBase}baby%20soft%20rattle%20toy%20set${imgSize}`, "食品级硅胶材质，4件套，可高温消毒", 0, 12, 250, 1800, "深圳"],
-    ["贝贝有机米粉", "辅食", 58, 78, `${imgBase}baby%20organic%20rice%20cereal${imgSize}`, "有机大米原料，强化铁锌钙，细腻易冲泡", 4, 12, 200, 1200, "武汉"],
-    ["贝贝果泥混合装", "辅食", 38, 52, `${imgBase}baby%20fruit%20puree%20pouch${imgSize}`, "6种水果混合，无添加糖，便携吸嘴装", 6, 24, 300, 1800, "武汉"],
-    ["贝贝营养面条", "辅食", 28, 38, `${imgBase}baby%20nutritious%20noodles${imgSize}`, "蔬菜汁和面，细软易煮，多种口味可选", 8, 36, 250, 1400, "武汉"],
-    ["贝贝婴儿润肤乳", "洗护", 68, 88, `${imgBase}baby%20moisturizing%20lotion${imgSize}`, "温和无刺激，24小时持久保湿，弱酸性配方", 0, 72, 180, 1100, "广州"],
-    ["贝贝婴儿洗发沐浴露", "洗护", 58, 78, `${imgBase}baby%20shampoo%20body%20wash${imgSize}`, "二合一配方，无泪配方，天然植物精华", 0, 72, 200, 1300, "广州"],
-    ["贝贝婴儿防晒霜", "洗护", 88, 118, `${imgBase}baby%20sunscreen%20lotion${imgSize}`, "物理防晒SPF30，温和不刺激，6个月以上使用", 6, 72, 120, 680, "广州"],
-    ["贝贝纯棉连体衣", "服饰", 79, 129, `${imgBase}baby%20cotton%20romper%20bodysuit${imgSize}`, "100%精梳棉，开档设计易换尿布，A类标准", 0, 12, 200, 1500, "杭州"],
-    ["贝贝冬季保暖套装", "服饰", 158, 228, `${imgBase}baby%20winter%20warm%20clothing%20set${imgSize}`, "夹棉外套+裤子，柔软亲肤，加厚保暖", 6, 36, 100, 680, "杭州"],
+    ["贝贝金装婴儿配方奶粉1段", "奶粉", 268, 328, `${imgBase}baby%20formula%20milk%20powder%20tin%20stage1${imgSize}`, "0-6个月婴儿专用配方奶粉，富含DHA+ARA，接近母乳配方", 0, 6, 250, 1580, "上海"],
+    ["贝贝金装婴儿配方奶粉2段", "奶粉", 248, 298, `${imgBase}baby%20formula%20milk%20powder%20tin%20stage2${imgSize}`, "6-12个月较大婴儿配方奶粉，添加益生元组合", 6, 12, 130, 1320, "上海"],
+    ["贝贝金装幼儿配方奶粉3段", "奶粉", 228, 268, `${imgBase}toddler%20formula%20milk%20powder%20tin%20stage3${imgSize}`, "12-36个月幼儿配方奶粉，助力宝宝成长发育", 12, 36, 40, 980, "上海"],
+    ["贝贝有机奶粉1段", "奶粉", 358, 428, `${imgBase}organic%20baby%20formula%20milk%20powder${imgSize}`, "有机认证配方奶粉，纯净天然，0添加", 0, 6, 30, 560, "杭州"],
+    ["贝贝羊奶粉2段", "奶粉", 328, 388, `${imgBase}goat%20milk%20baby%20formula%20powder${imgSize}`, "山羊奶配方，分子小易吸收，适合牛奶蛋白过敏宝宝", 6, 12, 20, 420, "杭州"],
+    ["贝贝特殊配方奶粉", "奶粉", 398, 458, `${imgBase}special%20baby%20formula%20milk%20powder${imgSize}`, "特殊医学用途配方奶粉，深度水解蛋白", 0, 12, 15, 210, "广州"],
+    ["贝贝超薄透气纸尿裤NB号", "尿布", 89, 119, `${imgBase}baby%20diapers%20newborn%20pack${imgSize}`, "新生儿专用，0-5kg，超薄透气0.1cm", 0, 1, 490, 3200, "苏州"],
+    ["贝贝超薄透气纸尿裤S号", "尿布", 99, 129, `${imgBase}baby%20diapers%20small%20pack${imgSize}`, "小号纸尿裤，5-8kg，12小时干爽", 1, 3, 260, 2800, "苏州"],
+    ["贝贝超薄透气纸尿裤M号", "尿布", 109, 139, `${imgBase}baby%20diapers%20medium%20pack${imgSize}`, "中号纸尿裤，6-11kg，弹性腰围", 3, 8, 230, 2500, "苏州"],
+    ["贝贝超薄透气纸尿裤L号", "尿布", 119, 149, `${imgBase}baby%20diapers%20large%20pack${imgSize}`, "大号纸尿裤，9-14kg，防漏立体护围", 8, 15, 200, 2100, "苏州"],
+    ["贝贝益智积木套装", "玩具", 158, 198, `${imgBase}baby%20educational%20building%20blocks%20toy${imgSize}`, "大颗粒积木80块，防吞咽设计，锻炼手眼协调", 12, 36, 50, 890, "深圳"],
+    ["贝贝音乐手机玩具", "玩具", 68, 98, `${imgBase}baby%20music%20phone%20toy${imgSize}`, "模拟手机造型，中英文双语，多种音效互动", 0, 24, 70, 1560, "深圳"],
+    ["贝贝早教认知卡片", "玩具", 48, 68, `${imgBase}baby%20educational%20flash%20cards${imgSize}`, "108张双面认知卡，涵盖动物水果交通工具", 0, 36, 100, 2100, "深圳"],
+    ["贝贝软胶摇铃套装", "玩具", 78, 108, `${imgBase}baby%20soft%20rattle%20toy%20set${imgSize}`, "食品级硅胶材质，4件套，可高温消毒", 0, 12, 80, 1800, "深圳"],
+    ["贝贝有机米粉", "辅食", 58, 78, `${imgBase}baby%20organic%20rice%20cereal${imgSize}`, "有机大米原料，强化铁锌钙，细腻易冲泡", 4, 12, 290, 1200, "武汉"],
+    ["贝贝果泥混合装", "辅食", 38, 52, `${imgBase}baby%20fruit%20puree%20pouch${imgSize}`, "6种水果混合，无添加糖，便携吸嘴装", 6, 24, 160, 1800, "武汉"],
+    ["贝贝营养面条", "辅食", 28, 38, `${imgBase}baby%20nutritious%20noodles${imgSize}`, "蔬菜汁和面，细软易煮，多种口味可选", 8, 36, 130, 1400, "武汉"],
+    ["贝贝婴儿润肤乳", "洗护", 68, 88, `${imgBase}baby%20moisturizing%20lotion${imgSize}`, "温和无刺激，24小时持久保湿，弱酸性配方", 0, 72, 50, 1100, "广州"],
+    ["贝贝婴儿洗发沐浴露", "洗护", 58, 78, `${imgBase}baby%20shampoo%20body%20wash${imgSize}`, "二合一配方，无泪配方，天然植物精华", 0, 72, 60, 1300, "广州"],
+    ["贝贝婴儿防晒霜", "洗护", 88, 118, `${imgBase}baby%20sunscreen%20lotion${imgSize}`, "物理防晒SPF30，温和不刺激，6个月以上使用", 6, 72, 35, 680, "广州"],
+    ["贝贝纯棉连体衣", "服饰", 79, 129, `${imgBase}baby%20cotton%20romper%20bodysuit${imgSize}`, "100%精梳棉，开档设计易换尿布，A类标准", 0, 12, 60, 1500, "杭州"],
+    ["贝贝冬季保暖套装", "服饰", 158, 228, `${imgBase}baby%20winter%20warm%20clothing%20set${imgSize}`, "夹棉外套+裤子，柔软亲肤，加厚保暖", 6, 36, 30, 680, "杭州"],
   ]
   for (const p of products) {
     db.run(`INSERT INTO products (name, category, price, original_price, image, description, age_min, age_max, stock, sales, warehouse_city) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, p as any)

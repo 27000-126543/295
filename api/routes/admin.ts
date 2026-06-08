@@ -133,11 +133,31 @@ router.get('/dashboard', authMiddleware, adminMiddleware, async (req: AuthReques
     const recentWhere = buildWhere('WHERE 1=1', city, startDate, endDate, 'o')
     const recentOrders = query(`SELECT o.*, u.name as user_name FROM orders o JOIN users u ON o.user_id = u.id ${recentWhere.sql} ORDER BY o.created_at DESC LIMIT 5`, recentWhere.params)
 
-    const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']
+    let trendMonths: string[] = []
+    if (startDate && endDate) {
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      const sy = start.getFullYear()
+      const sm = start.getMonth()
+      const ey = end.getFullYear()
+      const em = end.getMonth()
+      let y = sy, m = sm
+      while (y < ey || (y === ey && m <= em)) {
+        trendMonths.push(`${y}-${String(m + 1).padStart(2, '0')}`)
+        m++
+        if (m > 11) { m = 0; y++ }
+      }
+    } else {
+      const now = new Date()
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        trendMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      }
+    }
     const trendParams: any[] = []
     let trendWhere = 'WHERE 1=1'
     if (city) { trendWhere += ' AND city = ?'; trendParams.push(city) }
-    const trendData = months.map(m => {
+    const trendData = trendMonths.map(m => {
       const tp = [...trendParams, `${m}%`]
       const ord = query(`SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM orders ${trendWhere} AND created_at LIKE ?`, tp)
       return { month: m, revenue: ord[0].total, orders: ord[0].count }
@@ -359,13 +379,22 @@ router.get('/monthly-report', authMiddleware, adminMiddleware, async (req: AuthR
       }
     })
 
-    const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']
-    const monthlyTrend = months.map(m => ({
-      month: m,
-      revenue: Math.round(30000 + Math.random() * 20000),
-      orders: Math.round(80 + Math.random() * 60),
-      users: Math.round(20 + Math.random() * 30),
-    }))
+    const reportMonths: string[] = []
+    const rNow = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(rNow.getFullYear(), rNow.getMonth() - i, 1)
+      reportMonths.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    }
+    const monthlyTrend = reportMonths.map(m => {
+      const result = query("SELECT COUNT(*) as orderCount, COALESCE(SUM(total_amount), 0) as revenue FROM orders WHERE created_at LIKE ?", [`${m}%`])
+      const userCount = query("SELECT COUNT(*) as count FROM users WHERE role = 'user' AND created_at LIKE ?", [`${m}%`])[0].count
+      return {
+        month: m,
+        revenue: result[0].revenue,
+        orders: result[0].orderCount,
+        users: userCount,
+      }
+    })
 
     res.json({
       success: true,
